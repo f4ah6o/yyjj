@@ -40,7 +40,9 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build yyjj library
-        run: pnpm build
+        run: |
+          export PATH="$HOME/.moon/bin:$PATH"
+          pnpm build
 
       - name: Build demo
         run: pnpm -F yyjj-demo build
