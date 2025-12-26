@@ -1,20 +1,65 @@
 ///|
-pub fn fib(n : Int) -> Int64 {
-  loop (n, 0L, 1L) {
-    (0, _, b) => b
-    (i, a, b) => continue (i - 1, b, a + b)
+/// Convert JSONC string to YAML string, preserving comments
+pub fn jsonc_to_yaml(input : String, width? : Int) -> Result[String, @common.ParseError] {
+  let parsed = @jsonc.parse(input)
+  match parsed {
+    Ok(node) => {
+      let yaml_node = @transform.jsonc_to_yaml(node)
+      let w = width.unwrap_or(80)
+      Ok(@yaml.print(yaml_node, width=w))
+    }
+    Err(e) => Err(e)
   }
 }
 
 ///|
-/// data is a labelled argument without default value having type Array[Int]
-/// start is an optional labelled argument with default value 0 having type Int
-/// length is an optional labelled argument without default value having type Option[Int]
-pub fn sum(data~ : Array[Int], start? : Int = 0, length? : Int) -> Int {
-  let end = if length is Some(length) { start + length } else { data.length() }
-  for i = start, sum = 0; i < end; i = i + 1, sum = sum + data[i] {
-
-  } else {
-    sum
+/// Convert YAML string to JSONC string, preserving comments
+pub fn yaml_to_jsonc(input : String, width? : Int) -> Result[String, @common.ParseError] {
+  let parsed = @yaml.parse(input)
+  match parsed {
+    Ok(node) => {
+      let jsonc_node = @transform.yaml_to_jsonc(node)
+      let w = width.unwrap_or(80)
+      Ok(@jsonc.print(jsonc_node, width=w))
+    }
+    Err(e) => Err(e)
   }
+}
+
+///|
+/// Parse JSONC string to CST
+pub fn parse_jsonc(input : String) -> Result[@jsonc.JsonNode, @common.ParseError] {
+  @jsonc.parse(input)
+}
+
+///|
+/// Parse YAML string to CST
+pub fn parse_yaml(input : String) -> Result[@yaml.YamlNode, @common.ParseError] {
+  @yaml.parse(input)
+}
+
+///|
+/// Print JSONC CST to string
+pub fn print_jsonc(node : @jsonc.JsonNode, width? : Int) -> String {
+  let w = width.unwrap_or(80)
+  @jsonc.print(node, width=w)
+}
+
+///|
+/// Print YAML CST to string
+pub fn print_yaml(node : @yaml.YamlNode, width? : Int) -> String {
+  let w = width.unwrap_or(80)
+  @yaml.print(node, width=w)
+}
+
+///|
+/// Transform JSONC CST to YAML CST
+pub fn transform_jsonc_to_yaml(node : @jsonc.JsonNode) -> @yaml.YamlNode {
+  @transform.jsonc_to_yaml(node)
+}
+
+///|
+/// Transform YAML CST to JSONC CST
+pub fn transform_yaml_to_jsonc(node : @yaml.YamlNode) -> @jsonc.JsonNode {
+  @transform.yaml_to_jsonc(node)
 }

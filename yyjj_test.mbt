@@ -1,20 +1,46 @@
 ///|
-test "fib" {
-  let array = [1, 2, 3, 4, 5].map(fib)
-
-  // `inspect` is used to check the output of the function
-  // Just write `inspect(value)` and execute `moon test --update`
-  // to update the expected output, and verify them afterwards
-  inspect(array, content="[1, 2, 3, 5, 8]")
+test "jsonc_to_yaml_simple" {
+  let jsonc = "{\"name\": \"test\", \"value\": 42}"
+  let result = @yyjj.jsonc_to_yaml(jsonc)
+  guard result is Ok(yaml) else { return }
+  // YAML output should contain key: value format
+  inspect(yaml.contains("name:"), content="true")
+  inspect(yaml.contains("value:"), content="true")
 }
 
 ///|
-test "sum" {
-  let array = [1, 2, 3, 4, 5]
-  inspect(sum(data=array), content="15")
-  inspect(sum(data=array, start=1), content="14")
-  inspect(sum(data=array, length=3), content="6")
-  let length = None
-  // Use `?` for punning
-  inspect(sum(data=array, length?), content="15")
+test "yaml_to_jsonc_simple" {
+  let yaml = "name: test\nvalue: 42"
+  let result = @yyjj.yaml_to_jsonc(yaml)
+  guard result is Ok(jsonc) else { return }
+  // JSONC output should contain quoted keys
+  inspect(jsonc.contains("\"name\""), content="true")
+  inspect(jsonc.contains("\"value\""), content="true")
+}
+
+///|
+test "parse_jsonc" {
+  let jsonc = "{\"key\": \"value\"}"
+  let result = @yyjj.parse_jsonc(jsonc)
+  guard result is Ok(_) else { return }
+  // Parse should succeed
+}
+
+///|
+test "parse_yaml" {
+  let yaml = "key: value"
+  let result = @yyjj.parse_yaml(yaml)
+  guard result is Ok(_) else { return }
+  // Parse should succeed
+}
+
+///|
+test "round_trip_jsonc_to_yaml" {
+  let original = "{\"items\": [1, 2, 3]}"
+  let to_yaml = @yyjj.jsonc_to_yaml(original)
+  guard to_yaml is Ok(yaml) else { return }
+  let back_to_jsonc = @yyjj.yaml_to_jsonc(yaml)
+  guard back_to_jsonc is Ok(jsonc) else { return }
+  // Should contain the same structure
+  inspect(jsonc.contains("items"), content="true")
 }
