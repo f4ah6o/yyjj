@@ -4,6 +4,10 @@
     {
       "path": "f4ah6o/yyjj",
       "alias": "lib"
+    },
+    {
+      "path": "moonbitlang/x/fs",
+      "alias": "fs"
     }
   ]
 }
