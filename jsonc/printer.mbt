@@ -58,9 +58,11 @@ fn object_to_doc(props : Array[JProperty]) -> @pretty.Doc {
   let prop_docs : Array[@pretty.Doc] = []
   for i = 0; i < props.length(); i = i + 1 {
     let prop = props[i]
+    let key_leading = trivia_to_doc(prop.key_trivia.leading, true)
     let key_doc = @pretty.text(escape_json_string(prop.key))
+    let key_trailing = trivia_to_doc(prop.key_trivia.trailing, false)
     let value_doc = to_doc_with_trivia(prop.value)
-    let prop_doc = @pretty.concat([key_doc, @pretty.text(": "), value_doc])
+    let prop_doc = @pretty.concat([key_leading, key_doc, key_trailing, @pretty.text(": "), value_doc])
     if i < props.length() - 1 {
       prop_docs.push(@pretty.concat([prop_doc, @pretty.text(",")]))
     } else {
