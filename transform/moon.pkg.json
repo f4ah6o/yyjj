@@ -1,0 +1,7 @@
+{
+  "import": [
+    { "path": "f4ah6o/yyjj/common", "alias": "common" },
+    { "path": "f4ah6o/yyjj/jsonc", "alias": "jsonc" },
+    { "path": "f4ah6o/yyjj/yaml", "alias": "yaml" }
+  ]
+}
