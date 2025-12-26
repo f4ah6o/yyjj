@@ -19,7 +19,7 @@
     "@preact/signals": "^2.0.4",
     "codemirror": "^6.0.1",
     "preact": "^10.26.5",
-    "yyjj": "^2025.12.2"
+    "yyjj": "^2025.12.3"
   },
   "devDependencies": {
     "@preact/preset-vite": "^2.10.2",
