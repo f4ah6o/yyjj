@@ -1,0 +1,189 @@
+:root {
+  --bg-color: #1a1a2e;
+  --surface-color: #16213e;
+  --border-color: #0f3460;
+  --header-bg: #0f3460;
+  --text-color: #e8e8e8;
+  --text-muted: #a0a0a0;
+  --accent-color: #e94560;
+  --error-color: #ff6b6b;
+  --error-bg: rgba(255, 107, 107, 0.1);
+  --link-color: #4da8da;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg-color: #f5f5f5;
+    --surface-color: #ffffff;
+    --border-color: #e0e0e0;
+    --header-bg: #f0f0f0;
+    --text-color: #1a1a1a;
+    --text-muted: #666666;
+    --accent-color: #e94560;
+    --error-color: #dc3545;
+    --error-bg: rgba(220, 53, 69, 0.1);
+    --link-color: #0066cc;
+  }
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #app {
+  height: 100%;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, sans-serif;
+  background-color: var(--bg-color);
+  color: var(--text-color);
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.app-header {
+  padding: 1rem;
+  text-align: center;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.app-header h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin-bottom: 0.25rem;
+}
+
+.app-subtitle {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+.app-main {
+  flex: 1;
+  overflow: hidden;
+}
+
+.app-footer {
+  padding: 0.75rem;
+  text-align: center;
+  border-top: 1px solid var(--border-color);
+  font-size: 0.875rem;
+}
+
+.app-footer a {
+  color: var(--link-color);
+  text-decoration: none;
+}
+
+.app-footer a:hover {
+  text-decoration: underline;
+}
+
+.separator {
+  margin: 0 0.5rem;
+  color: var(--text-muted);
+}
+
+/* Editor Layout */
+.editor-layout {
+  display: grid;
+  gap: 1rem;
+  height: 100%;
+  padding: 1rem;
+}
+
+@media (min-width: 768px) {
+  .editor-layout {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 767px) {
+  .editor-layout {
+    grid-template-rows: 1fr 1fr;
+  }
+}
+
+/* Editor Pane */
+.editor-pane {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow: hidden;
+  background-color: var(--surface-color);
+}
+
+.editor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 1rem;
+  background: var(--header-bg);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.editor-title {
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+.editor-error-badge {
+  background-color: var(--error-color);
+  color: white;
+  font-size: 0.75rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+.editor-container {
+  flex: 1;
+  overflow: hidden;
+}
+
+.editor-error {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background-color: var(--error-bg);
+  border-top: 1px solid var(--error-color);
+  font-size: 0.8125rem;
+}
+
+.error-location {
+  color: var(--error-color);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.error-message {
+  color: var(--text-color);
+}
+
+/* CodeMirror Overrides */
+.cm-editor {
+  height: 100%;
+  font-size: 0.875rem;
+}
+
+.cm-editor .cm-scroller {
+  font-family: "SF Mono", Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.cm-editor.cm-focused {
+  outline: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  .cm-editor {
+    background-color: var(--surface-color);
+  }
+}
