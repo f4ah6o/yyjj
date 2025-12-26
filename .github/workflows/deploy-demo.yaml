@@ -34,7 +34,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: examples
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --ignore-workspace
 
       - name: Build demo
         working-directory: examples
