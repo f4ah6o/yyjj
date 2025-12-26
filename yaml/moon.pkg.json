@@ -1,0 +1,6 @@
+{
+  "import": [
+    { "path": "f4ah6o/yyjj/common", "alias": "common" },
+    { "path": "f4ah6o/yyjj/pretty", "alias": "pretty" }
+  ]
+}
