@@ -3,7 +3,7 @@ import type { ParseError } from "../lib/yyjj-wrapper";
 
 export type EditSource = "jsonc" | "yaml" | null;
 
-const DEFAULT_JSONC = `{
+export const DEFAULT_JSONC = `{
   // サーバー設定
   "server": "localhost",
   "port": 8080,
@@ -14,17 +14,9 @@ const DEFAULT_JSONC = `{
   }
 }`;
 
-const DEFAULT_YAML = `# サーバー設定
-server: localhost
-port: 8080
-# データベース接続
-database:
-  host: db.example.com
-  name: myapp`;
-
 // Editor content
 export const jsoncContent = signal<string>(DEFAULT_JSONC);
-export const yamlContent = signal<string>(DEFAULT_YAML);
+export const yamlContent = signal<string>("");
 
 // Edit source tracking (to prevent infinite loops)
 export const editSource = signal<EditSource>(null);

@@ -1,6 +1,18 @@
+import { useEffect } from "preact/hooks";
 import { EditorLayout } from "./components/EditorLayout";
+import { DEFAULT_JSONC, yamlContent, editSource } from "./state/store";
+import { jsoncToYaml } from "./lib/yyjj-wrapper";
 
 export function App() {
+	// Initialize YAML from JSONC on first render
+	useEffect(() => {
+		const result = jsoncToYaml(DEFAULT_JSONC);
+		if (result.tag === "Ok") {
+			editSource.value = "jsonc";
+			yamlContent.value = result.val;
+		}
+	}, []);
+
 	return (
 		<div class="app">
 			<header class="app-header">
