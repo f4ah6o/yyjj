@@ -114,8 +114,9 @@ fn Lexer::handle_indent(self : Lexer) -> Token? {
   // Skip the spaces
   for i = 0; i < spaces; i = i + 1 {
     let _ = self.advance()
-
   }
+  // Mark that we're no longer at line start after processing indentation
+  self.at_line_start = false
   let current = self.current_indent()
   if spaces > current {
     // Indent
