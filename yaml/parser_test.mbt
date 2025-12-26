@@ -113,3 +113,72 @@ test "yaml_parse_sibling_keys_with_empty_values" {
   }
   inspect(s, content="main")
 }
+
+///|
+/// Test parsing the on: section of a GitHub Actions workflow
+/// This tests the case where a sequence is followed by a sibling key at the same level
+test "yaml_parse_github_actions_on_section" {
+  // Simplified version of the copilot-setup-steps.yaml on: section
+  let yaml = (
+    #|on:
+    #|  workflow_dispatch:
+    #|  push:
+    #|    paths:
+    #|      - file.yml
+    #|  pull_request:
+    #|    paths:
+    #|      - file.yml
+  )
+  let result = @yaml.parse(yaml)
+  guard result is Ok(@yaml.YMapping(pairs, _)) else {
+    println("Parse failed or not a mapping")
+    return
+  }
+  // Should have 1 pair at top level (on/true)
+  inspect(pairs.length(), content="1")
+  // The value should be a mapping with 3 sibling keys
+  guard pairs[0].value is @yaml.YMapping(on_value, _) else {
+    println("Expected nested mapping for 'on'")
+    return
+  }
+  // workflow_dispatch, push, pull_request
+  inspect(on_value.length(), content="3")
+}
+
+///|
+/// Test parsing the full structure of copilot-setup-steps.yaml
+test "yaml_parse_copilot_setup_steps" {
+  let yaml = (
+    #|name: "Copilot Setup Steps"
+    #|on:
+    #|  workflow_dispatch:
+    #|  push:
+    #|    paths:
+    #|      - file.yml
+    #|  pull_request:
+    #|    paths:
+    #|      - file.yml
+    #|jobs:
+    #|  copilot-setup-steps:
+    #|    runs-on: ubuntu-latest
+  )
+  let result = @yaml.parse(yaml)
+  guard result is Ok(@yaml.YMapping(pairs, _)) else {
+    println("Parse failed or not a mapping")
+    return
+  }
+  // Should have 3 top-level keys: name, on (as "true"), jobs
+  inspect(pairs.length(), content="3")
+  // Check the "on" section has 3 keys
+  guard pairs[1].value is @yaml.YMapping(on_value, _) else {
+    println("Expected nested mapping for 'on'")
+    return
+  }
+  inspect(on_value.length(), content="3")
+  // Check the "jobs" section
+  guard pairs[2].value is @yaml.YMapping(jobs_value, _) else {
+    println("Expected nested mapping for 'jobs'")
+    return
+  }
+  inspect(jobs_value.length(), content="1")
+}

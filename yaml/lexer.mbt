@@ -109,42 +109,39 @@ fn Lexer::handle_indent(self : Lexer) -> Token? {
   }
   let spaces = self.count_spaces()
   let start = self.current_pos()
-  // Debug: print line and spaces
-  println("handle_indent ENTRY: line=\{self.line}, spaces=\{spaces}, at_line_start=\{self.at_line_start}, stack=\{self.indent_stack.to_string()}")
-  if spaces == 2 || spaces == 0 || self.line == 3 || self.line == 6 {
-    println("  => IMPORTANT: line=\{self.line}, spaces=\{spaces}, current_indent=" + self.current_indent().to_string())
-  }
-  // Skip the spaces
-  for i = 0; i < spaces; i = i + 1 {
-    let _ = self.advance()
-  }
   let current = self.current_indent()
   if spaces > current {
-    // Indent
+    // Indent: consume spaces first
+    for i = 0; i < spaces; i = i + 1 {
+      let _ = self.advance()
+    }
     self.indent_stack.push(spaces)
     // Mark that we're no longer at line start after processing indent
     self.at_line_start = false
     Some(Token::new(Indent(spaces), @common.Span::new(start, self.current_pos())))
   } else if spaces < current {
     // Dedent: pop ONE level at a time
-    // The level we're dedenting TO is the new top of the stack after popping
-    // The level we're dedenting FROM is current
-    let from_level = current
+    // DON'T consume spaces yet - we may need to emit more dedents
     let _ = self.indent_stack.pop()
     let to_level = self.current_indent()
-    // We're dedenting FROM from_level TO to_level
-    // The dedent token should contain the level we're going TO
-    println("handle_indent: spaces=\{spaces}, current=\{from_level}, popping to \{to_level}, emitting Dedent(\{to_level})")
     // If there are more dedents needed (to_level > spaces), keep at_line_start true
     // so we'll emit another dedent on the next call
-    // Only mark as not at line start if we've dedented to or below the target spaces
+    // Only mark as not at line start and consume spaces if we've dedented to or below the target
     if to_level <= spaces {
+      // Final dedent: consume the spaces now
+      for i = 0; i < spaces; i = i + 1 {
+        let _ = self.advance()
+      }
       self.at_line_start = false
     }
-    // Otherwise, keep at_line_start true for more dedents
+    // Otherwise, keep at_line_start true for more dedents (don't consume spaces)
     Some(Token::new(Dedent(to_level), @common.Span::at(start)))
   } else {
     // spaces == current, no indent/dedent needed
+    // Consume the spaces
+    for i = 0; i < spaces; i = i + 1 {
+      let _ = self.advance()
+    }
     self.at_line_start = false
     None
   }

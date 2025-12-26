@@ -395,9 +395,7 @@ fn Parser::parse_mapping_with_first_key(
     self.skip_trivia()
     match self.peek_kind() {
       Some(Dedent(_)) => {
-        // Track if we've consumed a dedent that takes us above our base indent
-        let mut consumed_parent = false
-        // Consume dedents until we exit our mapping level
+        // Consume dedents at our level
         while self.peek_kind() is Some(Dedent(dn)) {
           // Check if this dedent exits our mapping level
           let exits_level = if base_indent != -1 {
@@ -407,22 +405,33 @@ fn Parser::parse_mapping_with_first_key(
             dn == 0
           }
           if exits_level {
-            // This dedent exits our mapping level
-            // Don't consume it - let our parent handle it
-            consumed_parent = true
+            // Special case: Dedent(0) means we're back at top level
+            // If this is a top-level mapping (first_key was parsed at indent 0),
+            // consume it and check for more top-level keys
+            if dn == 0 {
+              let _ = self.advance()
+              // Consume any remaining dedents
+              while self.peek_kind() is Some(Dedent(_)) {
+                let _ = self.advance()
+              }
+            }
             break
           }
-          // Consume this dedent (at or below base indent)
+          // Consume this dedent (at or above base indent)
           let _ = self.advance()
         }
         self.skip_trivia()
         let next_kind = self.peek_kind()
         // Debug logging
         if first_key == "name" || first_key == "true" || first_key == "paths" || first_key == "on" {
-          println("parse_mapping_with_first_key: after dedent, next_kind=" + debug_token_kind(next_kind) + ", is_potential_key=" + is_potential_key(next_kind).to_string() + ", base_indent=\{base_indent}, consumed_parent=\{consumed_parent}, first_key=\{first_key}")
+          println("parse_mapping_with_first_key: after dedent, next_kind=" + debug_token_kind(next_kind) + ", is_potential_key=" + is_potential_key(next_kind).to_string() + ", base_indent=\{base_indent}, first_key=\{first_key}")
         }
-        // Only break if we exited our level AND there's no sibling key
-        if consumed_parent && not(is_potential_key(next_kind)) {
+        // If we still see a Dedent, break (let parent handle)
+        if self.peek_kind() is Some(Dedent(_)) {
+          break
+        }
+        // If no potential key, also break
+        if not(is_potential_key(next_kind)) {
           break
         }
         // Otherwise continue the loop to parse the next key
@@ -713,7 +722,7 @@ fn Parser::parse_indented_mapping(
   leading : Array[@common.Comment]
 ) -> Result[YamlNode, @common.ParseError] {
   println("parse_indented_mapping: starting... tokens.length=\{self.tokens.length()}, self.pos=\{self.pos}")
-  if self.tokens.length() >= 40 && self.tokens.length() <= 50 {
+  if self.tokens.length() >= 30 && self.tokens.length() <= 60 {
     println("  All tokens: ")
     for i = 0; i < self.tokens.length(); i = i + 1 {
       println("    \{i}: " + self.tokens[i].kind.to_string())
@@ -758,10 +767,11 @@ fn Parser::parse_indented_mapping(
     match self.peek_kind() {
       Some(Dedent(n)) => {
         println("  parse_indented_mapping: loop start - saw dedent n=\{n}, base_indent=\{base_indent}")
-        // Exit if base_indent is set and n <= base_indent (dedented to or past our level)
+        // Exit if base_indent is set and n < base_indent (dedented PAST our level)
         // Or if base_indent is -1 and n == 0 (dedented to top level)
+        // If n == base_indent, we're at the SAME level, so sibling keys may exist
         let should_exit = if base_indent != -1 {
-          n <= base_indent
+          n < base_indent
         } else {
           n == 0
         }
@@ -927,25 +937,19 @@ fn Parser::parse_indented_mapping(
       Some(Dedent(n)) => {
         println("  parse_indented_mapping: saw Dedent(\{n}), base_indent=\{base_indent}, key=\{key}")
         // Check if we've exited this mapping:
-        // 1. If base_indent is set and n <= base_indent, we've dedented to or past our level
+        // 1. If base_indent is set and n < base_indent, we've dedented PAST our level
         // 2. If base_indent is -1 and n == 0, we've dedented to top level
+        // If n == base_indent, we're at the same level, so sibling keys may exist
         let should_exit = if base_indent != -1 {
-          n <= base_indent
+          n < base_indent
         } else {
           n == 0
         }
         if should_exit {
           // We've dedented back to or past our base indent level
-          // Consume dedents strictly below base_indent, but stop at base_indent or above
+          // Consume the dedent that triggered exit so the parent can see the next token
           println("  parse_indented_mapping: exiting due to dedent (should_exit), key=\{key}, n=\{n}, base_indent=\{base_indent}")
-          while self.peek_kind() is Some(Dedent(dn)) {
-            if base_indent != -1 && dn <= base_indent {
-              // This is at or below our base indent, stop consuming
-              break
-            }
-            // Consume dedents strictly below base_indent
-            let _ = self.advance()
-          }
+          let _ = self.advance()
           break
         }
         // Otherwise, consume the dedent and check for more keys
