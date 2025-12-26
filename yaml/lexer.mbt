@@ -7,7 +7,6 @@ pub struct Lexer {
   mut column : Int
   indent_stack : Array[Int] // Stack of indent levels
   mut at_line_start : Bool
-  mut pending_dedents : Int // Number of dedents to emit
 }
 
 ///|
@@ -20,7 +19,6 @@ pub fn Lexer::new(source : String) -> Lexer {
     column: 0,
     indent_stack: [0], // Start with indent level 0
     at_line_start: true,
-    pending_dedents: 0,
   }
 }
 
@@ -111,46 +109,49 @@ fn Lexer::handle_indent(self : Lexer) -> Token? {
   }
   let spaces = self.count_spaces()
   let start = self.current_pos()
+  // Debug: print line and spaces
+  println("handle_indent ENTRY: line=\{self.line}, spaces=\{spaces}, at_line_start=\{self.at_line_start}, stack=\{self.indent_stack.to_string()}")
+  if spaces == 2 || spaces == 0 || self.line == 3 || self.line == 6 {
+    println("  => IMPORTANT: line=\{self.line}, spaces=\{spaces}, current_indent=" + self.current_indent().to_string())
+  }
   // Skip the spaces
   for i = 0; i < spaces; i = i + 1 {
     let _ = self.advance()
   }
-  // Mark that we're no longer at line start after processing indentation
-  self.at_line_start = false
   let current = self.current_indent()
   if spaces > current {
     // Indent
     self.indent_stack.push(spaces)
+    // Mark that we're no longer at line start after processing indent
+    self.at_line_start = false
     Some(Token::new(Indent(spaces), @common.Span::new(start, self.current_pos())))
   } else if spaces < current {
-    // Calculate dedents needed
-    while self.current_indent() > spaces {
-      self.indent_stack.pop() |> ignore
-      self.pending_dedents += 1
+    // Dedent: pop ONE level at a time
+    // The level we're dedenting TO is the new top of the stack after popping
+    // The level we're dedenting FROM is current
+    let from_level = current
+    let _ = self.indent_stack.pop()
+    let to_level = self.current_indent()
+    // We're dedenting FROM from_level TO to_level
+    // The dedent token should contain the level we're going TO
+    println("handle_indent: spaces=\{spaces}, current=\{from_level}, popping to \{to_level}, emitting Dedent(\{to_level})")
+    // If there are more dedents needed (to_level > spaces), keep at_line_start true
+    // so we'll emit another dedent on the next call
+    // Only mark as not at line start if we've dedented to or below the target spaces
+    if to_level <= spaces {
+      self.at_line_start = false
     }
-    if self.pending_dedents > 0 {
-      self.pending_dedents -= 1
-      Some(
-        Token::new(Dedent(self.current_indent()), @common.Span::at(start)),
-      )
-    } else {
-      None
-    }
+    // Otherwise, keep at_line_start true for more dedents
+    Some(Token::new(Dedent(to_level), @common.Span::at(start)))
   } else {
+    // spaces == current, no indent/dedent needed
+    self.at_line_start = false
     None
   }
 }
 
 ///|
 pub fn Lexer::next_token(self : Lexer) -> Token {
-  // Handle pending dedents first
-  if self.pending_dedents > 0 {
-    self.pending_dedents -= 1
-    return Token::new(
-      Dedent(self.current_indent()),
-      @common.Span::at(self.current_pos()),
-    )
-  }
   // Handle indentation at line start
   match self.handle_indent() {
     Some(tok) => return tok
