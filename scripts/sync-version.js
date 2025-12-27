@@ -10,7 +10,16 @@ const rootDir = join(__dirname, '..');
 // Read package.json
 const packagePath = join(rootDir, 'package.json');
 const packageJson = JSON.parse(readFileSync(packagePath, 'utf8'));
-const version = packageJson.version;
+
+// Get version from argument or package.json
+const argVersion = process.argv[2];
+const version = argVersion || packageJson.version;
+
+// Update package.json if version argument provided
+if (argVersion) {
+  packageJson.version = argVersion;
+  writeFileSync(packagePath, JSON.stringify(packageJson, null, 2) + '\n');
+}
 
 // Read moon.mod.json
 const moonModPath = join(rootDir, 'moon.mod.json');
