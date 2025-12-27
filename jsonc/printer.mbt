@@ -42,10 +42,9 @@ fn array_to_doc(elements : Array[JsonNode]) -> @pretty.Doc {
       content_docs.push(elem_doc)
     }
   }
-  let content = @pretty.join(content_docs, @pretty.line())
-  @pretty.group(
-    @pretty.concat([open, @pretty.nest(2, @pretty.concat([@pretty.line(), content])), @pretty.line(), close]),
-  )
+  let content = @pretty.join(content_docs, @pretty.hardline())
+  // Always expand arrays with hardline for readability
+  @pretty.concat([open, @pretty.nest(2, @pretty.concat([@pretty.hardline(), content])), @pretty.hardline(), close])
 }
 
 ///|
@@ -69,10 +68,9 @@ fn object_to_doc(props : Array[JProperty]) -> @pretty.Doc {
       prop_docs.push(prop_doc)
     }
   }
-  let content = @pretty.join(prop_docs, @pretty.line())
-  @pretty.group(
-    @pretty.concat([open, @pretty.nest(2, @pretty.concat([@pretty.line(), content])), @pretty.line(), close]),
-  )
+  let content = @pretty.join(prop_docs, @pretty.hardline())
+  // Always expand objects with hardline for readability
+  @pretty.concat([open, @pretty.nest(2, @pretty.concat([@pretty.hardline(), content])), @pretty.hardline(), close])
 }
 
 ///|
