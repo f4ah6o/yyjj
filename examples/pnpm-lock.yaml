@@ -9,38 +9,38 @@ importers:
   .:
     dependencies:
       '@codemirror/lang-json':
-        specifier: ^6.0.1
+        specifier: ^6.0.2
         version: 6.0.2
       '@codemirror/lang-yaml':
         specifier: ^6.1.2
         version: 6.1.2
       '@codemirror/lint':
-        specifier: ^6.8.5
+        specifier: ^6.9.2
         version: 6.9.2
       '@codemirror/state':
-        specifier: ^6.5.2
+        specifier: ^6.5.3
         version: 6.5.3
       '@codemirror/view':
-        specifier: ^6.36.5
+        specifier: ^6.39.7
         version: 6.39.7
       '@preact/signals':
-        specifier: ^2.0.4
+        specifier: ^2.5.1
         version: 2.5.1(preact@10.28.1)
       codemirror:
-        specifier: ^6.0.1
+        specifier: ^6.0.2
         version: 6.0.2
       preact:
-        specifier: ^10.26.5
+        specifier: ^10.28.1
         version: 10.28.1
       yyjj:
-        specifier: ^2025.12.3
-        version: 2025.12.3
+        specifier: ^2025.12.4
+        version: 2025.12.4
     devDependencies:
       '@preact/preset-vite':
         specifier: ^2.10.2
         version: 2.10.2(@babel/core@7.28.5)(preact@10.28.1)(vite@7.3.0)
       oxlint:
-        specifier: ^1.1.0
+        specifier: ^1.35.0
         version: 1.35.0
       typescript:
         specifier: ^5.9.3
@@ -808,8 +808,8 @@ packages:
   yallist@3.1.1:
     resolution: {integrity: sha512-a4UGQaWPH59mOXUYnAG2ewncQS4i4F43Tv3JoAM+s2VDAmS9NsK8GpDMLrCHPksFT7h3K6TOoUNn2pb7RoXx4g==}
 
-  yyjj@2025.12.3:
-    resolution: {integrity: sha512-jTHUUtnzXVAdKTebLu0ld4T742ZIvxD38tO0WMgGh3HXwCSFcChhTt8KFXs5Si5BLtEjkG3t2FvAtumuWna0Zw==}
+  yyjj@2025.12.4:
+    resolution: {integrity: sha512-j37IaVwiHc2seKe8kKjKllY9g0rGnxuTtwr3mTqTTT624tSBfb7DqHT6mc/6FxAQ5ZFIJvFc94tIh5X+O8Ol2w==}
 
 snapshots:
 
@@ -1512,4 +1512,4 @@ snapshots:
 
   yallist@3.1.1: {}
 
-  yyjj@2025.12.3: {}
+  yyjj@2025.12.4: {}
