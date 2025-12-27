@@ -7,7 +7,7 @@ pub enum JsonNode {
   JString(String, @common.Trivia)
   JArray(Array[JsonNode], @common.Trivia)
   JObject(Array[JProperty], @common.Trivia)
-} derive(Eq, Show)
+} derive(Eq, Show, Arbitrary)
 
 ///|
 /// Object property with key and value
@@ -15,7 +15,7 @@ pub struct JProperty {
   key : String
   key_trivia : @common.Trivia // Trivia attached to the key
   value : JsonNode
-} derive(Eq, Show)
+} derive(Eq, Show, Arbitrary)
 
 ///|
 /// Create a new property

@@ -3,7 +3,8 @@
     { "path": "f4ah6o/yyjj/common", "alias": "common" },
     { "path": "f4ah6o/yyjj/jsonc", "alias": "jsonc" },
     { "path": "f4ah6o/yyjj/yaml", "alias": "yaml" },
-    { "path": "f4ah6o/yyjj/transform", "alias": "transform" }
+    { "path": "f4ah6o/yyjj/transform", "alias": "transform" },
+    { "path": "moonbitlang/quickcheck", "alias": "qc" }
   ],
   "link": {
     "js": {

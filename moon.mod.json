@@ -4,7 +4,8 @@
   "preferred-target": "js",
   "deps": {
     "moonbitlang/x": "0.4.38",
-    "mizchi/js": "0.10.6"
+    "mizchi/js": "0.10.6",
+    "moonbitlang/quickcheck": "0.6.2"
   },
   "readme": "README.mbt.md",
   "repository": "https://github.com/f4ah6o/yyjj.mbt",

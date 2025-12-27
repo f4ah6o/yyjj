@@ -3,7 +3,7 @@
 pub enum CommentKind {
   LineComment // // or #
   BlockComment // /* */
-} derive(Eq, Show)
+} derive(Eq, Show, Arbitrary)
 
 ///|
 /// Create a line comment kind
@@ -24,7 +24,7 @@ pub struct Comment {
   kind : CommentKind
   span : Span
   preceding_newline : Bool // Was there a newline before this comment?
-} derive(Eq, Show)
+} derive(Eq, Show, Arbitrary)
 
 ///|
 /// Create a new comment
@@ -42,7 +42,7 @@ pub fn Comment::new(
 pub struct Trivia {
   leading : Array[Comment] // Comments before the node
   trailing : Array[Comment] // Comments on same line after node
-} derive(Eq, Show)
+} derive(Eq, Show, Arbitrary)
 
 ///|
 /// Create empty trivia

@@ -4,7 +4,7 @@ pub struct Pos {
   line : Int
   column : Int
   offset : Int // byte offset from start
-} derive(Eq, Show)
+} derive(Eq, Show, Arbitrary)
 
 ///|
 /// Create a new position
@@ -23,7 +23,7 @@ pub fn Pos::zero() -> Pos {
 pub struct Span {
   start : Pos
   end : Pos
-} derive(Eq, Show)
+} derive(Eq, Show, Arbitrary)
 
 ///|
 /// Create a new span

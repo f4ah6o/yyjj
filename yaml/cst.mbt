@@ -6,7 +6,7 @@ pub enum YamlScalarStyle {
   DoubleQuoted
   Literal // | block
   Folded // > block
-} derive(Eq, Show)
+} derive(Eq, Show, Arbitrary)
 
 ///| Factory function for Plain style
 pub fn YamlScalarStyle::plain() -> YamlScalarStyle {
@@ -44,7 +44,7 @@ pub enum YamlNode {
   YMapping(Array[YKeyValue], @common.Trivia)
   YAlias(String, @common.Trivia) // *alias reference
   YAnchor(String, YamlNode) // &anchor definition
-} derive(Eq, Show)
+} derive(Eq, Show, Arbitrary)
 
 ///|
 /// YAML key-value pair
@@ -52,7 +52,7 @@ pub struct YKeyValue {
   key : YamlNode
   key_trivia : @common.Trivia
   value : YamlNode
-} derive(Eq, Show)
+} derive(Eq, Show, Arbitrary)
 
 ///|
 /// Create a new key-value pair
