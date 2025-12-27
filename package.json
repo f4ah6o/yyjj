@@ -1,6 +1,6 @@
 {
   "name": "yyjj",
-  "version": "2025.12.3",
+  "version": "2025.12.4",
   "description": "JSONC⇔YAML converter library with comment preservation, powered by MoonBit",
   "type": "module",
   "author": "f12o",

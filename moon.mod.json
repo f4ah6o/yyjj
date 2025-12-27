@@ -1,6 +1,6 @@
 {
   "name": "f4ah6o/yyjj",
-  "version": "2025.12.3",
+  "version": "2025.12.4",
   "preferred-target": "js",
   "deps": {
     "moonbitlang/x": "0.4.38",
