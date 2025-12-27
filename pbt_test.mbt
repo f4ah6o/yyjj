@@ -327,3 +327,114 @@ test "pbt_string_roundtrip_jsonc_yaml_jsonc" {
     max_success=100,
   )
 }
+
+///|
+/// Generate nested JSON structure similar to GitHub Actions workflows
+/// Tests deeply nested mappings with sequences
+fn gen_nested_workflow_json() -> @qc.Gen[@jsonc.JsonNode] {
+  let empty = @common.Trivia::empty()
+  // Use gen_safe_key() for all string values to avoid YAML special chars
+  gen_safe_key().bind(fn(job_name) {
+    gen_safe_key().bind(fn(runs_on) {
+      gen_safe_key().bind(fn(perm_key) {
+        gen_safe_key().bind(fn(perm_val) {
+          gen_safe_key().bind(fn(step_name) {
+            gen_safe_key().fmap(fn(step_val) {
+              // Structure: { jobs: { <job_name>: { runs-on: ..., permissions: {...}, steps: [...] } } }
+              @jsonc.JsonNode::object_with_trivia(
+                [
+                  @jsonc.JProperty::new(
+                    "jobs",
+                    empty,
+                    @jsonc.JsonNode::object_with_trivia(
+                      [
+                        @jsonc.JProperty::new(
+                          job_name,
+                          empty,
+                          @jsonc.JsonNode::object_with_trivia(
+                            [
+                              @jsonc.JProperty::new(
+                                "runson",
+                                empty,
+                                @jsonc.JsonNode::string_with_trivia(runs_on, empty),
+                              ),
+                              @jsonc.JProperty::new(
+                                "permissions",
+                                empty,
+                                @jsonc.JsonNode::object_with_trivia(
+                                  [
+                                    @jsonc.JProperty::new(
+                                      perm_key,
+                                      empty,
+                                      @jsonc.JsonNode::string_with_trivia(perm_val, empty),
+                                    ),
+                                  ],
+                                  empty,
+                                ),
+                              ),
+                              @jsonc.JProperty::new(
+                                "steps",
+                                empty,
+                                @jsonc.JsonNode::array_with_trivia(
+                                  [
+                                    @jsonc.JsonNode::object_with_trivia(
+                                      [
+                                        @jsonc.JProperty::new(
+                                          "name",
+                                          empty,
+                                          @jsonc.JsonNode::string_with_trivia(step_name, empty),
+                                        ),
+                                        @jsonc.JProperty::new(
+                                          "uses",
+                                          empty,
+                                          @jsonc.JsonNode::string_with_trivia(step_val, empty),
+                                        ),
+                                      ],
+                                      empty,
+                                    ),
+                                  ],
+                                  empty,
+                                ),
+                              ),
+                            ],
+                            empty,
+                          ),
+                        ),
+                      ],
+                      empty,
+                    ),
+                  ),
+                ],
+                empty,
+              )
+            })
+          })
+        })
+      })
+    })
+  })
+}
+
+///|
+/// PBT: Nested workflow structure round-trip JSONC -> YAML -> JSONC
+test "pbt_nested_workflow_roundtrip" {
+  @qc.quick_check(
+    @qc.forall(gen_nested_workflow_json(), fn(node) {
+      let jsonc_str = @jsonc.print(node)
+      match jsonc_to_yaml(jsonc_str) {
+        Ok(yaml_str) =>
+          match yaml_to_jsonc(yaml_str) {
+            Ok(back_jsonc_str) =>
+              match @jsonc.parse(back_jsonc_str) {
+                Ok(back_node) =>
+                  strip_jsonc_trivia(node) == strip_jsonc_trivia(back_node)
+                Err(_) => false
+              }
+            Err(_) => false
+          }
+        Err(_) => false
+      }
+    }),
+    max_success=100,
+  )
+}

@@ -201,28 +201,16 @@ fn Parser::parse_value(self : Parser) -> Result[YamlNode, @common.ParseError] {
   let leading = self.flush_leading()
   match self.peek_kind() {
     // Indent at the start of a value - check if it's a sequence or mapping
-    Some(Indent(_)) => {
+    Some(Indent(indent_level)) => {
+      // Consume the indent
+      let _ = self.advance()
+      self.skip_trivia()
       // Peek ahead to see if the next non-trivia token is a Dash (sequence)
-      let temp_pos = self.pos + 1
-      let mut check_pos = temp_pos
-      // Skip trivia (whitespace, newlines, comments)
-      while check_pos < self.tokens.length() {
-        match self.tokens[check_pos].kind {
-          Whitespace(_) | Newline | Comment(_) => {
-            check_pos = check_pos + 1
-          }
-          _ => break
-        }
-      }
-      // If we see a Dash after skipping trivia, it's a sequence
-      if check_pos < self.tokens.length() && self.tokens[check_pos].kind is Dash {
-        // Consume the indent and parse the sequence
-        let _ = self.advance()
-        self.skip_trivia()
+      if self.peek_kind() is Some(Dash) {
         self.parse_block_sequence(leading)
       } else {
         // Otherwise, it's a mapping
-        self.parse_indented_mapping(leading)
+        self.parse_indented_mapping(leading, indent_level)
       }
     }
     Some(Dash) => self.parse_block_sequence(leading)
@@ -372,16 +360,17 @@ fn Parser::parse_mapping_with_first_key(
     let key_node = YString(key, key_style, @common.Trivia::empty())
     // Parse value
     self.skip_trivia()
-    // Handle indent for block value
-    let has_indent = if self.peek_kind() is Some(Indent(n)) {
-      let _ = self.advance()
-      if base_indent == -1 {
-        base_indent = n
+    // Handle indent for block value - capture the indent level
+    let (has_indent, value_indent) = match self.peek_kind() {
+      Some(Indent(n)) => {
+        let _ = self.advance()
+        if base_indent == -1 {
+          base_indent = n
+        }
+        self.skip_trivia()
+        (true, n)
       }
-      self.skip_trivia()
-      true
-    } else {
-      false
+      _ => (false, 0)
     }
 
     // Check if there's a key after optional indent (for indented block mapping)
@@ -409,9 +398,9 @@ fn Parser::parse_mapping_with_first_key(
       YNull(@common.Trivia::empty())
     } else if has_indent && has_key_after {
       // We have an indent followed by a key - this is an indented block mapping
-      // Call parse_indented_mapping directly to handle the nested structure
+      // Call parse_indented_mapping with the captured indent level
       let leading = self.flush_leading()
-      match self.parse_indented_mapping(leading) {
+      match self.parse_indented_mapping(leading, value_indent) {
         Ok(v) => v
         Err(e) => return Err(e)
       }
@@ -701,27 +690,14 @@ fn Parser::is_sibling_key_ahead(self : Parser) -> Bool {
 ///|
 fn Parser::parse_indented_mapping(
   self : Parser,
-  leading : Array[@common.Comment]
+  leading : Array[@common.Comment],
+  base_indent : Int  // Explicit indent level from caller
 ) -> Result[YamlNode, @common.ParseError] {
   // Parse an indented block mapping by collecting all keys at this level
   let pairs : Array[YKeyValue] = []
   let mut key = ""
   let mut key_style : YamlScalarStyle = Plain
   let mut key_leading = self.flush_leading()
-  let mut base_indent : Int = -1
-  // Track the entry position to detect key level
-  let entry_pos = self.pos
-  // Check if we were entered right after consuming an Indent (from parse_mapping_with_first_key)
-  // If so, the key level is that Indent's level - we should exit when we dedent below it
-  if entry_pos > 0 {
-    match self.tokens[entry_pos - 1].kind {
-      Indent(key_level) => {
-        // Keys are at key_level - set base_indent to this level
-        base_indent = key_level
-      }
-      _ => ()
-    }
-  }
   let mut loop_count = 0
 
   while true {
@@ -731,21 +707,12 @@ fn Parser::parse_indented_mapping(
     }
 
     // Check for dedent at caller level before parsing next key
-    // This handles the case where a sequence has ended and we see a dedent
-    // that returns to a level at or above our base indent
+    // Exit if we've dedented past our level
     match self.peek_kind() {
       Some(Dedent(n)) => {
-        // Exit if base_indent is set and n < base_indent (dedented PAST our level)
-        // Or if base_indent is -1 and n == 0 (dedented to top level)
-        // If n == base_indent, we're at the SAME level, so sibling keys may exist
-        let should_exit = if base_indent != -1 {
-          n < base_indent
-        } else {
-          n == 0
-        }
-        if should_exit {
-          // Consume the dedent and exit
-          let _ = self.advance()
+        // Exit if dedented to or below our base level
+        if n <= base_indent {
+          // Don't consume the dedent - let the caller handle it
           break
         }
         // Otherwise, consume the dedent and continue checking for more keys
@@ -846,11 +813,8 @@ fn Parser::parse_indented_mapping(
     self.skip_trivia()
 
     // Check for indent for nested value
-    let has_indent = if self.peek_kind() is Some(Indent(n)) {
+    let has_indent = if self.peek_kind() is Some(Indent(_)) {
       let _ = self.advance()
-      if base_indent == -1 {
-        base_indent = n
-      }
       self.skip_trivia()
       true
     } else {

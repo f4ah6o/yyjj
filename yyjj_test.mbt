@@ -122,6 +122,101 @@ test "yaml_to_jsonc_user_case" {
 }
 
 ///|
+test "yaml_to_jsonc_github_actions_workflow" {
+  // GitHub Actions workflow with deeply nested structure
+  let yaml =
+    #|name: CI
+    #|on:
+    #|  push:
+    #|    branches:
+    #|      - main
+    #|jobs:
+    #|  build:
+    #|    runs-on: ubuntu-latest
+    #|    permissions:
+    #|      contents: read
+    #|    steps:
+    #|      - name: Checkout
+    #|        uses: actions/checkout@v5
+    #|      - name: Build
+    #|        run: npm run build
+  let result = @yyjj.yaml_to_jsonc(yaml)
+  guard result is Ok(jsonc) else {
+    println("Parse error!")
+    return
+  }
+  println("GitHub Actions YAML:")
+  println(yaml)
+  println("\nJSONC output:")
+  println(jsonc)
+
+  // Critical: structure must be preserved
+  // 1. `on` must not become `true` (YAML 1.1 keyword issue)
+  assert_false(jsonc.contains("\"true\":"))
+  // 2. `jobs.build.permissions` must be inside build, not at jobs level
+  assert_true(jsonc.contains("\"build\":"))
+  assert_true(jsonc.contains("\"permissions\":"))
+  // 3. `steps` must be an array inside build
+  assert_true(jsonc.contains("\"steps\":"))
+  assert_true(jsonc.contains("\"name\": \"Checkout\""))
+  assert_true(jsonc.contains("\"uses\": \"actions/checkout@v5\""))
+  // 4. `run` must be inside the Build step, not leaked outside
+  assert_true(jsonc.contains("\"run\": \"npm run build\""))
+}
+
+///|
+test "yaml_to_jsonc_copilot_setup_steps_structure" {
+  // Test the copilot-setup-steps.yaml structure
+  let yaml =
+    #|name: "Copilot Setup Steps"
+    #|on:
+    #|  workflow_dispatch:
+    #|  push:
+    #|    paths:
+    #|      - .github/workflows/copilot-setup-steps.yml
+    #|jobs:
+    #|  copilot-setup-steps:
+    #|    runs-on: ubuntu-latest
+    #|    permissions:
+    #|      contents: read
+    #|    steps:
+    #|      - name: Checkout code
+    #|        uses: actions/checkout@v5
+    #|      - name: Set up MoonBit
+    #|        run: |
+    #|          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+    #|          echo "$HOME/.moon/bin" >> $GITHUB_PATH
+  let result = @yyjj.yaml_to_jsonc(yaml)
+  guard result is Ok(jsonc) else {
+    println("Parse error!")
+    return
+  }
+  println("Copilot setup steps YAML:")
+  println(yaml)
+  println("\nJSONC output:")
+  println(jsonc)
+
+  // Critical structure checks
+  // 1. `on` must be a key, not `true`
+  assert_true(jsonc.contains("\"on\":"))
+  assert_false(jsonc.contains("\"true\":"))
+
+  // 2. `copilot-setup-steps` job must contain all nested keys
+  assert_true(jsonc.contains("\"copilot-setup-steps\":"))
+  assert_true(jsonc.contains("\"runs-on\": \"ubuntu-latest\""))
+
+  // 3. `permissions` must exist
+  assert_true(jsonc.contains("\"permissions\":"))
+  assert_true(jsonc.contains("\"contents\": \"read\""))
+
+  // 4. `steps` must be an array with proper structure
+  assert_true(jsonc.contains("\"steps\":"))
+  assert_true(jsonc.contains("\"name\": \"Checkout code\""))
+  assert_true(jsonc.contains("\"uses\": \"actions/checkout@v5\""))
+  assert_true(jsonc.contains("\"name\": \"Set up MoonBit\""))
+}
+
+///|
 test "roundtrip_jsonc_yaml_jsonc_with_comments" {
   // Demo page default JSONC
   let original_jsonc =

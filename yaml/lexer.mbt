@@ -493,9 +493,54 @@ fn Lexer::lex_folded_block(self : Lexer, start : @common.Pos) -> Token {
 
 ///|
 fn Lexer::lex_plain_scalar(self : Lexer, start : @common.Pos) -> Token {
-  let scalar = self.skip_while(fn(c) { is_plain_scalar_char(c) })
+  // Plain scalars can contain spaces, but end at:
+  // - Newline
+  // - `: ` (colon + space, key indicator)
+  // - ` #` (space + hash, comment)
+  // - Flow indicators: { } [ ] ,
+  let mut last_non_space_pos = self.pos
+  while not(self.is_eof()) {
+    let ch = self.char_at(self.pos)
+    // Check for terminators
+    match ch {
+      '\n' | '\r' | '{' | '}' | '[' | ']' | ',' => break
+      ':' => {
+        // Check if followed by space, newline, or EOF
+        if self.peek_at(1) is Some(next) {
+          if next == ' ' || next == '\t' || next == '\n' || next == '\r' {
+            break
+          }
+          // Otherwise, : is part of the scalar
+          last_non_space_pos = self.pos + 1
+          let _ = self.advance()
+        } else {
+          // EOF after :, colon is part of the scalar
+          last_non_space_pos = self.pos + 1
+          let _ = self.advance()
+        }
+      }
+      ' ' | '\t' => {
+        // Check if followed by # (comment start)
+        if self.peek_at(1) == Some('#') {
+          break
+        }
+        // Otherwise, space is part of the scalar
+        let _ = self.advance()
+      }
+      '#' =>
+        // # at start of value is a comment
+        break
+      _ => {
+        last_non_space_pos = self.pos + 1
+        let _ = self.advance()
+      }
+    }
+  }
+  // Get the scalar string (trimmed of trailing whitespace)
+  let start_byte = start.offset
+  let scalar = self.source.substring(start=start_byte, end=last_non_space_pos)
   // Check for keywords
-  let kind = match scalar {
+  let kind : TokenKind = match scalar {
     "null" | "Null" | "NULL" | "~" => NullValue
     "true" | "True" | "TRUE" | "yes" | "Yes" | "YES" | "on" | "On" | "ON" =>
       TrueValue(scalar)
@@ -503,6 +548,21 @@ fn Lexer::lex_plain_scalar(self : Lexer, start : @common.Pos) -> Token {
       FalseValue(scalar)
     _ => PlainScalar(scalar)
   }
+  // Reset position to end of trimmed scalar
+  self.pos = last_non_space_pos
+  // Recalculate line/column
+  let mut line = start.line
+  let mut col = start.column
+  for i = start_byte; i < last_non_space_pos; i = i + 1 {
+    if self.source[i].to_int().unsafe_to_char() == '\n' {
+      line += 1
+      col = 0
+    } else {
+      col += 1
+    }
+  }
+  self.line = line
+  self.column = col
   Token::new(kind, @common.Span::new(start, self.current_pos()))
 }
 
@@ -529,22 +589,6 @@ fn is_anchor_char(c : Char) -> Bool {
   (c >= '0' && c <= '9') ||
   c == '_' ||
   c == '-'
-}
-
-///|
-fn is_plain_scalar_char(c : Char) -> Bool {
-  // Plain scalar can contain most chars except flow indicators and newlines
-  c != ':' &&
-  c != '#' &&
-  c != '\n' &&
-  c != '\r' &&
-  c != '{' &&
-  c != '}' &&
-  c != '[' &&
-  c != ']' &&
-  c != ',' &&
-  c != ' ' &&
-  c != '\t'
 }
 
 ///|
