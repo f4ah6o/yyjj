@@ -1,5 +1,13 @@
 import { defineConfig } from "vite";
 import preact from "@preact/preset-vite";
+import fs from "fs";
+import path from "path";
+
+function getVersion() {
+	const packageJsonPath = path.resolve(__dirname, "../package.json");
+	const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf-8"));
+	return packageJson.version;
+}
 
 export default defineConfig({
 	plugins: [preact()],
@@ -7,5 +15,8 @@ export default defineConfig({
 	build: {
 		outDir: "dist",
 		sourcemap: true,
+	},
+	define: {
+		__YYJJ_VERSION__: JSON.stringify(getVersion()),
 	},
 });

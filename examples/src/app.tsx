@@ -3,6 +3,8 @@ import { EditorLayout } from "./components/EditorLayout";
 import { DEFAULT_JSONC, yamlContent, editSource } from "./state/store";
 import { jsoncToYaml } from "./lib/yyjj-wrapper";
 
+declare const __YYJJ_VERSION__: string;
+
 export function App() {
 	// Initialize YAML from JSONC on first render
 	useEffect(() => {
@@ -38,6 +40,8 @@ export function App() {
 				>
 					npm
 				</a>
+				<span class="separator">|</span>
+				<span class="version">v{__YYJJ_VERSION__}</span>
 			</footer>
 		</div>
 	);
