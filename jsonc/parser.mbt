@@ -180,6 +180,79 @@ fn Parser::collect_trailing(self : Parser) -> Array[@common.Comment] {
 }
 
 ///|
+/// Collect trailing comments after a closing bracket/brace
+/// This handles the case where the comment appears on the same line or the next line after ]
+fn Parser::collect_trailing_after_bracket(self : Parser) -> Array[@common.Comment] {
+  let trailing = self.collect_trailing()
+  // After normal trailing collection, check for comments on the next line
+  // OR comments immediately after ] (without whitespace)
+  while true {
+    match self.peek_kind() {
+      Some(LineComment(content)) => {
+        // Comment on same line (no whitespace before it) or on next line
+        let _ = self.advance()
+        let comment = @common.Comment::new(
+          content,
+          @common.CommentKind::line(),
+          @common.Span::at(@common.Pos::zero()),
+          self.saw_newline,
+        )
+        trailing.push(comment)
+        self.saw_newline = true
+        break
+      }
+      Some(BlockComment(content)) => {
+        let _ = self.advance()
+        let comment = @common.Comment::new(
+          content,
+          @common.CommentKind::block(),
+          @common.Span::at(@common.Pos::zero()),
+          self.saw_newline,
+        )
+        trailing.push(comment)
+        break
+      }
+      Some(Whitespace(_)) => {
+        let _ = self.advance()
+      }
+      Some(Newline) => {
+        let _ = self.advance()
+        self.saw_newline = true
+        // After newline, check if there's a comment
+        match self.peek_kind() {
+          Some(LineComment(content)) => {
+            let _ = self.advance()
+            let comment = @common.Comment::new(
+              content,
+              @common.CommentKind::line(),
+              @common.Span::at(@common.Pos::zero()),
+              true, // Preceding newline is true
+            )
+            trailing.push(comment)
+            // Only collect one comment after newline
+            break
+          }
+          Some(BlockComment(content)) => {
+            let _ = self.advance()
+            let comment = @common.Comment::new(
+              content,
+              @common.CommentKind::block(),
+              @common.Span::at(@common.Pos::zero()),
+              true,
+            )
+            trailing.push(comment)
+            break
+          }
+          _ => break
+        }
+      }
+      _ => break
+    }
+  }
+  trailing
+}
+
+///|
 /// Expect a specific token kind
 fn Parser::expect(
   self : Parser,
@@ -289,7 +362,7 @@ fn Parser::parse_object(
   // Handle empty object
   if self.peek_kind() == Some(RBrace) {
     let _ = self.advance()
-    let trailing = self.collect_trailing()
+    let trailing = self.collect_trailing_after_bracket()
     return Ok(JObject(properties, @common.Trivia::new(leading, trailing)))
   }
   // Parse properties
@@ -346,7 +419,7 @@ fn Parser::parse_object(
     Ok(_) => ()
     Err(e) => return Err(e)
   }
-  let trailing = self.collect_trailing()
+  let trailing = self.collect_trailing_after_bracket()
   Ok(JObject(properties, @common.Trivia::new(leading, trailing)))
 }
 
@@ -362,7 +435,7 @@ fn Parser::parse_array(
   // Handle empty array
   if self.peek_kind() == Some(RBracket) {
     let _ = self.advance()
-    let trailing = self.collect_trailing()
+    let trailing = self.collect_trailing_after_bracket()
     return Ok(JArray(elements, @common.Trivia::new(leading, trailing)))
   }
   // Parse elements
@@ -400,7 +473,7 @@ fn Parser::parse_array(
     Ok(_) => ()
     Err(e) => return Err(e)
   }
-  let trailing = self.collect_trailing()
+  let trailing = self.collect_trailing_after_bracket()
   Ok(JArray(elements, @common.Trivia::new(leading, trailing)))
 }
 

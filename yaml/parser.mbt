@@ -617,7 +617,8 @@ fn Parser::parse_flow_mapping(
   let pairs : Array[YKeyValue] = []
   self.skip_trivia()
   while self.peek_kind() != Some(RBrace) && not(self.is_eof()) {
-    // Parse key
+    // Parse key with trivia
+    let key_leading = self.flush_leading()
     let (key_str, key_style) = match self.peek_kind() {
       Some(PlainScalar(s)) => {
         let _ = self.advance()
@@ -634,19 +635,28 @@ fn Parser::parse_flow_mapping(
       _ => break
     }
     let key_node = YString(key_str, key_style, @common.Trivia::empty())
-    self.skip_trivia()
-    // Expect colon
-    if self.peek_kind() == Some(Colon) {
-      let _ = self.advance()
 
+    // Skip whitespace only to find colon - don't skip comments
+    while self.peek_kind() is Some(Whitespace(_)) {
+      let _ = self.advance()
     }
+
+    // Collect trailing comments after colon
+    let key_trailing = if self.peek_kind() == Some(Colon) {
+      let _ = self.advance()
+      self.collect_trailing()
+    } else {
+      []
+    }
+    let key_trivia = @common.Trivia::new(key_leading, key_trailing)
+
     self.skip_trivia()
     // Parse value
     let value = match self.parse_value() {
       Ok(v) => v
       Err(e) => return Err(e)
     }
-    pairs.push(YKeyValue::new(key_node, @common.Trivia::empty(), value))
+    pairs.push(YKeyValue::new(key_node, key_trivia, value))
     self.skip_trivia()
     if self.peek_kind() == Some(Comma) {
       let _ = self.advance()
@@ -756,42 +766,60 @@ fn Parser::parse_indented_mapping(
         key_style = Plain
         key_leading = self.flush_leading()
         let _ = self.advance()
-        self.skip_trivia()
+        // Skip only whitespace on the same line - don't skip comments
+        while self.peek_kind() is Some(Whitespace(_)) {
+          let _ = self.advance()
+        }
       }
       Some(SingleQuotedScalar(s)) => {
         key = s
         key_style = SingleQuoted
         key_leading = self.flush_leading()
         let _ = self.advance()
-        self.skip_trivia()
+        // Skip only whitespace on the same line - don't skip comments
+        while self.peek_kind() is Some(Whitespace(_)) {
+          let _ = self.advance()
+        }
       }
       Some(DoubleQuotedScalar(s)) => {
         key = s
         key_style = DoubleQuoted
         key_leading = self.flush_leading()
         let _ = self.advance()
-        self.skip_trivia()
+        // Skip only whitespace on the same line - don't skip comments
+        while self.peek_kind() is Some(Whitespace(_)) {
+          let _ = self.advance()
+        }
       }
       Some(TrueValue(original)) => {
         key = original
         key_style = Plain
         key_leading = self.flush_leading()
         let _ = self.advance()
-        self.skip_trivia()
+        // Skip only whitespace on the same line - don't skip comments
+        while self.peek_kind() is Some(Whitespace(_)) {
+          let _ = self.advance()
+        }
       }
       Some(FalseValue(original)) => {
         key = original
         key_style = Plain
         key_leading = self.flush_leading()
         let _ = self.advance()
-        self.skip_trivia()
+        // Skip only whitespace on the same line - don't skip comments
+        while self.peek_kind() is Some(Whitespace(_)) {
+          let _ = self.advance()
+        }
       }
       Some(NullValue) => {
         key = "null"
         key_style = Plain
         key_leading = self.flush_leading()
         let _ = self.advance()
-        self.skip_trivia()
+        // Skip only whitespace on the same line - don't skip comments
+        while self.peek_kind() is Some(Whitespace(_)) {
+          let _ = self.advance()
+        }
       }
       Some(Indent(_)) => {
         // Indent before a key - consume it and continue

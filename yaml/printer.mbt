@@ -155,9 +155,9 @@ fn sequence_to_doc(elements : Array[YamlNode], indent : Int) -> @pretty.Doc {
           _ => false
         }
         let first_doc = if is_first_nested {
-          @pretty.concat([first_key_leading, first_key_doc, @pretty.text(":"), first_key_trailing, @pretty.nest(2, @pretty.concat([@pretty.hardline(), first_value_doc]))])
+          @pretty.concat([first_key_leading, first_key_doc, @pretty.text(":"), @pretty.nest(2, @pretty.concat([@pretty.hardline(), first_value_doc])), first_key_trailing])
         } else {
-          @pretty.concat([first_key_leading, first_key_doc, @pretty.text(":"), first_key_trailing, @pretty.text(" "), first_value_doc])
+          @pretty.concat([first_key_leading, first_key_doc, @pretty.text(":"), @pretty.text(" "), first_value_doc, first_key_trailing])
         }
 
         // Remaining pairs need to be indented by 2 (to align with first key)
@@ -174,10 +174,10 @@ fn sequence_to_doc(elements : Array[YamlNode], indent : Int) -> @pretty.Doc {
           }
           if is_nested {
             rest_docs.push(
-              @pretty.concat([key_leading, key_doc, @pretty.text(":"), key_trailing, @pretty.nest(2, @pretty.concat([@pretty.hardline(), value_doc]))]),
+              @pretty.concat([key_leading, key_doc, @pretty.text(":"), @pretty.nest(2, @pretty.concat([@pretty.hardline(), value_doc])), key_trailing]),
             )
           } else {
-            rest_docs.push(@pretty.concat([key_leading, key_doc, @pretty.text(":"), key_trailing, @pretty.text(" "), value_doc]))
+            rest_docs.push(@pretty.concat([key_leading, key_doc, @pretty.text(":"), @pretty.text(" "), value_doc, key_trailing]))
           }
         }
         let leading_trivia = trivia_to_doc(trivia.leading, true)
@@ -205,7 +205,7 @@ fn mapping_to_doc(pairs : Array[YKeyValue], indent : Int) -> @pretty.Doc {
     let key_leading = trivia_to_doc(pair.key_trivia.leading, true)
     let key_doc = node_to_doc(pair.key, indent)
     let value_doc = node_to_doc(pair.value, indent + 2)
-    // Output key_trivia trailing comments
+    // Output key_trivia trailing comments (these come AFTER the value)
     let key_trailing = trivia_to_doc(pair.key_trivia.trailing, false)
     // Check if value is a nested structure
     let is_nested = match pair.value {
@@ -214,11 +214,13 @@ fn mapping_to_doc(pairs : Array[YKeyValue], indent : Int) -> @pretty.Doc {
     }
     if is_nested {
       // nest must wrap hardline for indentation to apply
+      // key_trailing comes after the nested value
       docs.push(
-        @pretty.concat([key_leading, key_doc, @pretty.text(":"), key_trailing, @pretty.nest(2, @pretty.concat([@pretty.hardline(), value_doc]))]),
+        @pretty.concat([key_leading, key_doc, @pretty.text(":"), @pretty.nest(2, @pretty.concat([@pretty.hardline(), value_doc])), key_trailing]),
       )
     } else {
-      docs.push(@pretty.concat([key_leading, key_doc, @pretty.text(":"), key_trailing, @pretty.text(" "), value_doc]))
+      // key_trailing comes after the value
+      docs.push(@pretty.concat([key_leading, key_doc, @pretty.text(":"), @pretty.text(" "), value_doc, key_trailing]))
     }
   }
   @pretty.join(docs, @pretty.hardline())

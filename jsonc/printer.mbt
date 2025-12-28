@@ -37,12 +37,13 @@ fn array_to_doc(elements : Array[JsonNode]) -> @pretty.Doc {
   for i = 0; i < elements.length(); i = i + 1 {
     let elem_doc = to_doc_with_trivia(elements[i])
     if i < elements.length() - 1 {
-      content_docs.push(@pretty.concat([elem_doc, @pretty.text(",")]))
+      // Include hardline after comma so trailing comments stay with element
+      content_docs.push(@pretty.concat([elem_doc, @pretty.text(","), @pretty.hardline()]))
     } else {
       content_docs.push(elem_doc)
     }
   }
-  let content = @pretty.join(content_docs, @pretty.hardline())
+  let content = @pretty.concat(content_docs)
   // Always expand arrays with hardline for readability
   @pretty.concat([open, @pretty.nest(2, @pretty.concat([@pretty.hardline(), content])), @pretty.hardline(), close])
 }
@@ -61,7 +62,8 @@ fn object_to_doc(props : Array[JProperty]) -> @pretty.Doc {
     let key_doc = @pretty.text(escape_json_string(prop.key))
     let key_trailing = trivia_to_doc(prop.key_trivia.trailing, false)
     let value_doc = to_doc_with_trivia(prop.value)
-    let prop_doc = @pretty.concat([key_leading, key_doc, key_trailing, @pretty.text(": "), value_doc])
+    // key_trailing comes after the value (as a comment on the key-value pair)
+    let prop_doc = @pretty.concat([key_leading, key_doc, @pretty.text(": "), value_doc, key_trailing])
     if i < props.length() - 1 {
       prop_docs.push(@pretty.concat([prop_doc, @pretty.text(",")]))
     } else {
