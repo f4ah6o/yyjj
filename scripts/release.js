@@ -14,14 +14,22 @@ async function ask(question) {
   });
 }
 
-function runCommand(cmd, description) {
+function runCommand(cmd, description, options = {}) {
   try {
     console.log(`\n▸ ${description}`);
-    execSync(cmd, { stdio: 'inherit' });
+    execSync(cmd, { stdio: 'inherit', ...options });
     return true;
   } catch (error) {
     console.error(`❌ ${description} failed:`, error.message);
     return false;
+  }
+}
+
+function runCommandSilent(cmd) {
+  try {
+    return execSync(cmd, { encoding: 'utf8' }).trim();
+  } catch {
+    return null;
   }
 }
 
@@ -32,7 +40,7 @@ async function main() {
   console.log(`\n📦 Current version: ${currentVersion}`);
   console.log('');
 
-  const newVersion = await ask('Enter new version (e.g., 2025.12.1): ');
+  const newVersion = await ask('Enter new version (e.g., 2025.12.11): ');
 
   if (!newVersion) {
     console.log('❌ No version provided');
@@ -40,14 +48,22 @@ async function main() {
     return;
   }
 
+  // Validate version format
+  if (!/^\d{4}\.\d{1,2}\.\d{1,2}$/.test(newVersion)) {
+    console.log('❌ Invalid version format. Expected: YYYY.MM.DD (e.g., 2025.12.11)');
+    rl.close();
+    return;
+  }
+
   console.log('');
   console.log('Release plan:');
   console.log(`  1. Update package.json to ${newVersion}`);
-  console.log(`  2. Update moon.mod.json to ${newVersion}`);
-  console.log(`  3. Create git commit and tag v${newVersion}`);
-  console.log(`  4. Push to GitHub (commit & tag)`);
-  console.log(`  5. Create GitHub Release (triggers Actions)`);
-  console.log(`  6. GitHub Actions publishes to npm`);
+  console.log(`  2. Sync moon.mod.json & examples/package.json`);
+  console.log(`  3. Build (moon build → rolldown → types)`);
+  console.log(`  4. npm publish (with 1Password OTP)`);
+  console.log(`  5. Update examples/pnpm-lock.yaml`);
+  console.log(`  6. Git commit, tag, and push`);
+  console.log(`  7. Create GitHub Release (optional)`);
   console.log('');
 
   const confirm = await ask('Continue? (y/N): ');
@@ -64,25 +80,79 @@ async function main() {
       throw new Error('Failed to update package.json');
     }
 
-    // 2. Sync moon.mod.json
-    if (!runCommand('node scripts/sync-version.js', 'Syncing moon.mod.json')) {
-      throw new Error('Failed to sync moon.mod.json');
+    // 2. Sync moon.mod.json & examples/package.json
+    if (!runCommand('node scripts/sync-version.js', 'Syncing moon.mod.json & examples/package.json')) {
+      throw new Error('Failed to sync versions');
     }
 
-    // 3. Git commit and tag
+    // 3. Build
+    console.log('\n━━━ Build Phase ━━━');
+
+    if (!runCommand('pnpm run build', 'Building package (moon → rolldown → types)')) {
+      throw new Error('Build failed');
+    }
+
+    // Verify build outputs
+    const requiredFiles = ['dist/index.mjs', 'dist/index.cjs', 'dist/index.d.ts'];
+    for (const file of requiredFiles) {
+      try {
+        readFileSync(file);
+      } catch {
+        throw new Error(`Build verification failed: ${file} not found`);
+      }
+    }
+    console.log('✓ Build outputs verified');
+
+    // 4. npm publish with 1Password OTP
+    console.log('\n━━━ Publish Phase ━━━');
+
     if (!runCommand(
-      `git add package.json moon.mod.json && git commit -m "chore(release): bump version to ${newVersion}"`,
+      'npm publish --access public --otp $(op item get "npmjs" --otp)',
+      'Publishing to npm (fetching OTP from 1Password)',
+      { shell: '/bin/bash' }
+    )) {
+      throw new Error('npm publish failed');
+    }
+
+    // Verify publish
+    console.log('\n▸ Verifying npm publish...');
+    await new Promise(resolve => setTimeout(resolve, 3000)); // Wait for registry
+    const npmVersion = runCommandSilent(`npm view yyjj version`);
+    if (npmVersion === newVersion) {
+      console.log(`✓ Verified: yyjj@${newVersion} is live on npm`);
+    } else {
+      console.log(`⚠ Registry shows ${npmVersion}, expected ${newVersion} (may need time to propagate)`);
+    }
+
+    // 5. Update examples/pnpm-lock.yaml
+    console.log('\n━━━ Examples Update Phase ━━━');
+
+    if (!runCommand('pnpm install --filter examples', 'Updating examples/pnpm-lock.yaml')) {
+      console.log('⚠ Failed to update examples lock file (continuing anyway)');
+    }
+
+    // 6. Git commit, tag, and push
+    console.log('\n━━━ Git Phase ━━━');
+
+    if (!runCommand(
+      'git add package.json moon.mod.json examples/package.json examples/pnpm-lock.yaml',
+      'Staging changes'
+    )) {
+      throw new Error('Failed to stage changes');
+    }
+
+    if (!runCommand(
+      `git commit -m "chore(release): bump version to ${newVersion}"`,
       'Creating git commit'
     )) {
       throw new Error('Failed to create git commit');
     }
 
-    if (!runCommand(`git tag v${newVersion}`, 'Creating git tag v' + newVersion)) {
+    if (!runCommand(`git tag v${newVersion}`, `Creating git tag v${newVersion}`)) {
       throw new Error('Failed to create git tag');
     }
 
-    // 4. Push to GitHub
-    if (!runCommand('git push', 'Pushing to GitHub')) {
+    if (!runCommand('git push', 'Pushing commits to GitHub')) {
       throw new Error('Failed to push commits');
     }
 
@@ -90,39 +160,46 @@ async function main() {
       throw new Error('Failed to push git tag');
     }
 
-    // 5. Create GitHub Release
-    const releaseCreated = runCommand(
-      `gh release create v${newVersion} --generate-notes`,
-      'Creating GitHub Release'
-    );
+    // 7. Create GitHub Release (optional)
+    console.log('\n━━━ GitHub Release ━━━');
 
-    if (!releaseCreated) {
-      console.log('');
-      console.log('⚠️  GitHub Release creation failed (gh CLI might not be installed)');
-      console.log(`    Please create release manually: https://github.com/f4ah6o/yyjj.mbt/releases/new?tag=v${newVersion}`);
-      console.log('');
-      console.log('    Once the release is published, GitHub Actions will automatically run.');
-      rl.close();
-      return;
+    const createRelease = await ask('Create GitHub Release? (y/N): ');
+
+    if (createRelease.toLowerCase() === 'y') {
+      const releaseCreated = runCommand(
+        `gh release create v${newVersion} --generate-notes`,
+        'Creating GitHub Release'
+      );
+
+      if (!releaseCreated) {
+        console.log('');
+        console.log('⚠️  GitHub Release creation failed');
+        console.log(`   Create manually: https://github.com/f4ah6o/yyjj.mbt/releases/new?tag=v${newVersion}`);
+      }
+    } else {
+      console.log('Skipping GitHub Release creation');
     }
 
+    // Success summary
     console.log('');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.log('✅ Release complete!');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.log('');
-    console.log('What happens next:');
-    console.log(`  • GitHub Actions (publish.yaml) triggers on release published event`);
-    console.log(`  • Package builds and tests run`);
-    console.log(`  • npm publishes to registry with OIDC (Trusted Publishing)`);
-    console.log(`  • Provenance attestation automatically generated`);
-    console.log('');
-    console.log(`Release URL: https://github.com/f4ah6o/yyjj.mbt/releases/tag/v${newVersion}`);
-    console.log(`npm package: https://www.npmjs.com/package/yyjj/v/${newVersion}`);
+    console.log('Published:');
+    console.log(`  📦 npm: https://www.npmjs.com/package/yyjj/v/${newVersion}`);
+    console.log(`  🏷️  Tag: v${newVersion}`);
+    console.log(`  🔗 Repo: https://github.com/f4ah6o/yyjj.mbt`);
 
   } catch (error) {
     console.error('\n❌ Release failed:', error.message);
     console.log('\nRollback suggestions:');
-    console.log(`  git tag -d v${newVersion}  # Delete local tag`);
-    console.log(`  git reset --soft HEAD~1     # Undo last commit`);
+    console.log(`  git tag -d v${newVersion}           # Delete local tag (if created)`);
+    console.log(`  git reset --soft HEAD~1             # Undo last commit (if created)`);
+    console.log(`  git checkout package.json moon.mod.json examples/package.json`);
+    console.log('');
+    console.log('If npm publish succeeded, you may need to deprecate the version:');
+    console.log(`  npm deprecate yyjj@${newVersion} "Released in error"`);
   }
 
   rl.close();
