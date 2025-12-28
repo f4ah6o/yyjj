@@ -222,6 +222,44 @@ test "yaml_parse_sequence_item_with_multiple_keys" {
 }
 
 ///|
+/// Test Issue #5: same-indent mapping entries should be siblings, not nested
+/// https://github.com/anthropics/yyjj.mbt/issues/5
+test "yaml_parse_sibling_mappings_same_indent" {
+  let yaml = (
+    #|jobs:
+    #|  build:
+    #|    runs-on: ubuntu-latest
+    #|  lint:
+    #|    runs-on: ubuntu-latest
+  )
+  let result = @yaml.parse(yaml)
+  guard result is Ok(@yaml.YMapping(pairs, _)) else {
+    println("Parse failed or not a mapping")
+    return
+  }
+  // Should have 1 top-level key: jobs
+  inspect(pairs.length(), content="1")
+  // jobs should be a mapping with 2 sibling keys: build, lint
+  guard pairs[0].value is @yaml.YMapping(jobs_value, _) else {
+    println("Expected nested mapping for 'jobs'")
+    return
+  }
+  // Critical assertion: build and lint are siblings (2 entries), NOT lint nested in build
+  inspect(jobs_value.length(), content="2")
+  // Verify the keys
+  guard jobs_value[0].key is @yaml.YString(key1, _, _) else {
+    println("Expected string key for first entry")
+    return
+  }
+  inspect(key1, content="build")
+  guard jobs_value[1].key is @yaml.YString(key2, _, _) else {
+    println("Expected string key for second entry")
+    return
+  }
+  inspect(key2, content="lint")
+}
+
+///|
 /// Test that 'on' keyword is preserved as a key (not converted to 'true')
 test "yaml_parse_on_keyword_as_key" {
   let yaml = "on:\n  push: main"

@@ -421,8 +421,8 @@ fn Parser::parse_mapping_with_first_key(
           let exits_level = if base_indent != -1 {
             dn < base_indent
           } else {
-            // If base_indent is not set, Dedent(0) means we're at top level
-            dn == 0
+            // If base_indent is not set, any Dedent means we've exited our scope
+            true
           }
           if exits_level {
             // Special case: Dedent(0) means we're back at top level
@@ -565,6 +565,12 @@ fn Parser::parse_block_sequence(
         }
         if should_consume {
           let _ = self.advance()
+        }
+        // Check if there's another dash at this level (sibling sequence item)
+        // This handles the case where a nested mapping exits and we're back at sequence level
+        self.skip_trivia()
+        if self.peek_kind() == Some(Dash) {
+          continue // Continue parsing next sequence item
         }
         break
       }
