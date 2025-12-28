@@ -34,10 +34,20 @@ function runCommandSilent(cmd) {
 }
 
 async function main() {
+  // Check if npm login is configured
+  const npmUser = runCommandSilent('npm whoami');
+  if (!npmUser) {
+    console.error('❌ npm login required');
+    console.error('Please run: npm login');
+    rl.close();
+    process.exit(1);
+  }
+
   const packageJson = JSON.parse(readFileSync('package.json', 'utf8'));
   const currentVersion = packageJson.version;
 
-  console.log(`\n📦 Current version: ${currentVersion}`);
+  console.log(`\n✓ Logged in as: ${npmUser}`);
+  console.log(`📦 Current version: ${currentVersion}`);
   console.log('');
 
   const newVersion = await ask('Enter new version (e.g., 2025.12.11): ');
