@@ -1143,3 +1143,201 @@ test "pbt_edge_case_numbers" {
     max_success=100,
   )
 }
+
+// ============================================================================
+// Position Mapping Tests
+// ============================================================================
+
+///|
+/// Unit test: Empty mappings return None for lookup
+test "mapping_lookup_empty_returns_none" {
+  let mappings : Array[@common.SourceMapping] = []
+  let result = @common.lookup_target_position(mappings, 0, 0, 0)
+  match result {
+    None => assert_true(true)
+    Some(_) => assert_false(true)
+  }
+}
+
+///|
+/// Unit test: Lookup finds exact match
+test "mapping_lookup_exact_match" {
+  let start = @common.Pos::new(0, 0, 0)
+  let end = @common.Pos::new(0, 5, 5)
+  let target_start = @common.Pos::new(1, 2, 10)
+  let target_end = @common.Pos::new(1, 7, 15)
+
+  let mapping = @common.SourceMapping::new(start, end, target_start, target_end)
+  let mappings = [mapping]
+
+  // Position at offset 2 should match
+  let result = @common.lookup_target_position(mappings, 0, 2, 2)
+  match result {
+    Some(pos) => assert_true(pos == target_start)
+    None => assert_false(true)
+  }
+}
+
+///|
+/// Unit test: Lookup returns None for position outside range
+test "mapping_lookup_outside_range_returns_none" {
+  let start = @common.Pos::new(0, 0, 0)
+  let end = @common.Pos::new(0, 5, 5)
+  let target_start = @common.Pos::new(1, 2, 10)
+  let target_end = @common.Pos::new(1, 7, 15)
+
+  let mapping = @common.SourceMapping::new(start, end, target_start, target_end)
+  let mappings = [mapping]
+
+  // Position at offset 10 should not match
+  let result = @common.lookup_target_position(mappings, 0, 10, 10)
+  match result {
+    None => assert_true(true)
+    Some(_) => assert_false(true)
+  }
+}
+
+///|
+/// Unit test: Reverse lookup (target to source)
+test "mapping_reverse_lookup" {
+  let source_start = @common.Pos::new(0, 0, 0)
+  let source_end = @common.Pos::new(0, 5, 5)
+  let target_start = @common.Pos::new(1, 2, 10)
+  let target_end = @common.Pos::new(1, 7, 15)
+
+  let mapping = @common.SourceMapping::new(source_start, source_end, target_start, target_end)
+  let mappings = [mapping]
+
+  // Position in target should map back to source
+  let result = @common.lookup_source_position(mappings, 1, 5, 12)
+  match result {
+    Some(pos) => assert_true(pos == source_start)
+    None => assert_false(true)
+  }
+}
+
+///|
+/// Unit test: ConversionResult creation
+test "mapping_conversion_result_creation" {
+  let output = "test output"
+  let mappings : Array[@common.SourceMapping] = []
+
+  let result = @common.ConversionResult::new(output, mappings)
+  let output_match = result.output == output
+  let mappings_empty = result.mappings.length() == 0
+  assert_true(output_match && mappings_empty)
+}
+
+///|
+/// Unit test: Empty conversion result
+test "mapping_empty_conversion_result" {
+  let result = @common.ConversionResult::empty()
+  let output_empty = result.output == ""
+  let mappings_empty = result.mappings.length() == 0
+  assert_true(output_empty && mappings_empty)
+}
+
+///|
+/// PBT: Lookup is consistent with mapping range
+test "pbt_mapping_lookup_consistency" {
+  // Generator for a position with small offset values
+  let gen_small_pos : @qc.Gen[@common.Pos] = @qc.Gen::spawn()
+  let gen_pos = gen_small_pos.fmap(fn(p) {
+    @common.Pos::new(0, 0, p.offset % 50)
+  })
+
+  // Generator for small positive integers (1-100)
+  let gen_int : @qc.Gen[Int] = @qc.Gen::spawn()
+  let gen_small_int = gen_int.fmap(fn(n) {
+    let abs_n = if n < 0 { -n } else { n }
+    1 + (abs_n % 100)
+  })
+
+  let gen_mapping = gen_pos.bind(fn(start) {
+    gen_small_int.fmap(fn(delta) {
+      let end_offset = start.offset + delta
+      let end = @common.Pos::new(start.line + 1, 0, end_offset)
+      let target_start = @common.Pos::new(10, 0, 200)
+      let target_end = @common.Pos::new(10, 5, 205)
+      @common.SourceMapping::new(start, end, target_start, target_end)
+    })
+  })
+
+  @qc.quick_check(
+    @qc.forall(gen_mapping, fn(mapping) {
+      let mappings = [mapping]
+
+      // Position at start should be found
+      let start_result = @common.lookup_target_position(
+        mappings,
+        mapping.source_start.line,
+        mapping.source_start.column,
+        mapping.source_start.offset,
+      )
+
+      match start_result {
+        Some(pos) => pos == mapping.target_start
+        None => false
+      }
+    }),
+    max_success=100,
+  )
+}
+
+///|
+/// PBT: Source and target lookup are inverses
+test "pbt_mapping_lookup_roundtrip" {
+  // Generator for a position with small offset values
+  let gen_small_pos : @qc.Gen[@common.Pos] = @qc.Gen::spawn()
+  let gen_pos = gen_small_pos.fmap(fn(p) {
+    @common.Pos::new(0, 0, p.offset % 50)
+  })
+
+  // Generator for small positive integers (1-100)
+  let gen_int : @qc.Gen[Int] = @qc.Gen::spawn()
+  let gen_small_int = gen_int.fmap(fn(n) {
+    let abs_n = if n < 0 { -n } else { n }
+    1 + (abs_n % 100)
+  })
+
+  let gen_mapping = gen_pos.bind(fn(start) {
+    gen_small_int.fmap(fn(delta) {
+      let end_offset = start.offset + delta
+      let end = @common.Pos::new(start.line + 1, 0, end_offset)
+      let target_start = @common.Pos::new(10, 0, 200)
+      let target_end = @common.Pos::new(10, 5, 205)
+      @common.SourceMapping::new(start, end, target_start, target_end)
+    })
+  })
+
+  @qc.quick_check(
+    @qc.forall(gen_mapping, fn(mapping) {
+      let mappings = [mapping]
+
+      // Source -> Target -> Source should give original position
+      let target_result = @common.lookup_target_position(
+        mappings,
+        mapping.source_start.line,
+        mapping.source_start.column,
+        mapping.source_start.offset,
+      )
+
+      match target_result {
+        Some(target_pos) => {
+          let source_result = @common.lookup_source_position(
+            mappings,
+            target_pos.line,
+            target_pos.column,
+            target_pos.offset,
+          )
+          match source_result {
+            Some(source_pos) => source_pos == mapping.source_start
+            None => false
+          }
+        }
+        None => false
+      }
+    }),
+    max_success=100,
+  )
+}
