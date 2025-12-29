@@ -8,6 +8,23 @@ pub enum YamlScalarStyle {
   Folded // > block
 } derive(Eq, Show, Arbitrary)
 
+///|
+/// YAML collection style (flow vs block)
+pub enum YamlCollectionStyle {
+  Block  // - item style (block)
+  Flow   // [item] or {key: value} style (flow)
+} derive(Eq, Show, Arbitrary)
+
+///| Factory function for Block style
+pub fn YamlCollectionStyle::block() -> YamlCollectionStyle {
+  Block
+}
+
+///| Factory function for Flow style
+pub fn YamlCollectionStyle::flow() -> YamlCollectionStyle {
+  Flow
+}
+
 ///| Factory function for Plain style
 pub fn YamlScalarStyle::plain() -> YamlScalarStyle {
   Plain
@@ -40,8 +57,8 @@ pub enum YamlNode {
   YBool(Bool, @common.Trivia)
   YNumber(String, @common.Trivia)
   YString(String, YamlScalarStyle, @common.Trivia)
-  YSequence(Array[YamlNode], @common.Trivia)
-  YMapping(Array[YKeyValue], @common.Trivia)
+  YSequence(Array[YamlNode], YamlCollectionStyle, @common.Trivia)
+  YMapping(Array[YKeyValue], YamlCollectionStyle, @common.Trivia)
   YAlias(String, @common.Trivia) // *alias reference
   YAnchor(String, YamlNode) // &anchor definition
 } derive(Eq, Show, Arbitrary)
@@ -72,8 +89,8 @@ pub fn YamlNode::trivia(self : YamlNode) -> @common.Trivia {
     YBool(_, t) => t
     YNumber(_, t) => t
     YString(_, _, t) => t
-    YSequence(_, t) => t
-    YMapping(_, t) => t
+    YSequence(_, _, t) => t
+    YMapping(_, _, t) => t
     YAlias(_, t) => t
     YAnchor(_, node) => node.trivia()
   }
@@ -104,15 +121,15 @@ pub fn YamlNode::string(value : String, style : YamlScalarStyle) -> YamlNode {
 }
 
 ///|
-/// Create a sequence node
+/// Create a sequence node (defaults to block style)
 pub fn YamlNode::sequence(elements : Array[YamlNode]) -> YamlNode {
-  YSequence(elements, @common.Trivia::empty())
+  YSequence(elements, YamlCollectionStyle::block(), @common.Trivia::empty())
 }
 
 ///|
-/// Create a mapping node
+/// Create a mapping node (defaults to block style)
 pub fn YamlNode::mapping(pairs : Array[YKeyValue]) -> YamlNode {
-  YMapping(pairs, @common.Trivia::empty())
+  YMapping(pairs, YamlCollectionStyle::block(), @common.Trivia::empty())
 }
 
 ///|
@@ -140,15 +157,27 @@ pub fn YamlNode::string_with_trivia(value : String, style : YamlScalarStyle, tri
 }
 
 ///|
-/// Create a sequence node with trivia
+/// Create a sequence node with trivia (defaults to block style)
 pub fn YamlNode::sequence_with_trivia(elements : Array[YamlNode], trivia : @common.Trivia) -> YamlNode {
-  YSequence(elements, trivia)
+  YSequence(elements, YamlCollectionStyle::block(), trivia)
 }
 
 ///|
-/// Create a mapping node with trivia
+/// Create a sequence node with style and trivia
+pub fn YamlNode::sequence_with_style(elements : Array[YamlNode], style : YamlCollectionStyle, trivia : @common.Trivia) -> YamlNode {
+  YSequence(elements, style, trivia)
+}
+
+///|
+/// Create a mapping node with trivia (defaults to block style)
 pub fn YamlNode::mapping_with_trivia(pairs : Array[YKeyValue], trivia : @common.Trivia) -> YamlNode {
-  YMapping(pairs, trivia)
+  YMapping(pairs, YamlCollectionStyle::block(), trivia)
+}
+
+///|
+/// Create a mapping node with style and trivia
+pub fn YamlNode::mapping_with_style(pairs : Array[YKeyValue], style : YamlCollectionStyle, trivia : @common.Trivia) -> YamlNode {
+  YMapping(pairs, style, trivia)
 }
 
 ///|

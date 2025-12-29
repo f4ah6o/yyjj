@@ -523,7 +523,7 @@ fn Parser::parse_mapping_with_first_key(
       _ => break
     }
   }
-  Ok(YMapping(pairs, @common.Trivia::empty()))
+  Ok(YMapping(pairs, YamlCollectionStyle::Block, @common.Trivia::empty()))
 }
 
 ///|
@@ -577,7 +577,7 @@ fn Parser::parse_block_sequence(
       _ => ()
     }
   }
-  Ok(YSequence(elements, @common.Trivia::new(leading, [])))
+  Ok(YSequence(elements, YamlCollectionStyle::Block, @common.Trivia::new(leading, [])))
 }
 
 ///|
@@ -605,7 +605,7 @@ fn Parser::parse_flow_sequence(
 
   }
   let trailing = self.collect_trailing()
-  Ok(YSequence(elements, @common.Trivia::new(leading, trailing)))
+  Ok(YSequence(elements, YamlCollectionStyle::Flow, @common.Trivia::new(leading, trailing)))
 }
 
 ///|
@@ -668,7 +668,7 @@ fn Parser::parse_flow_mapping(
 
   }
   let trailing = self.collect_trailing()
-  Ok(YMapping(pairs, @common.Trivia::new(leading, trailing)))
+  Ok(YMapping(pairs, YamlCollectionStyle::Flow, @common.Trivia::new(leading, trailing)))
 }
 
 ///|
@@ -919,7 +919,7 @@ fn Parser::parse_indented_mapping(
     // Otherwise, continue for more keys
   }
 
-  Ok(YMapping(pairs, @common.Trivia::new(leading, [])))
+  Ok(YMapping(pairs, YamlCollectionStyle::Block, @common.Trivia::new(leading, [])))
 }
 
 ///|

@@ -2,7 +2,7 @@
 test "yaml_parse_simple_mapping" {
   let source = "key: value"
   let result = @yaml.parse(source)
-  guard result is Ok(@yaml.YMapping(pairs, _)) else { return }
+  guard result is Ok(@yaml.YMapping(pairs, _, _)) else { return }
   inspect(pairs.length(), content="1")
 }
 
@@ -14,21 +14,21 @@ test "yaml_parse_sequence" {
     #|- item3
   )
   let result = @yaml.parse(source)
-  guard result is Ok(@yaml.YSequence(elements, _)) else { return }
+  guard result is Ok(@yaml.YSequence(elements, _, _)) else { return }
   inspect(elements.length(), content="3")
 }
 
 ///|
 test "yaml_parse_flow_sequence" {
   let result = @yaml.parse("[1, 2, 3]")
-  guard result is Ok(@yaml.YSequence(elements, _)) else { return }
+  guard result is Ok(@yaml.YSequence(elements, _, _)) else { return }
   inspect(elements.length(), content="3")
 }
 
 ///|
 test "yaml_parse_flow_mapping" {
   let result = @yaml.parse("{key: value}")
-  guard result is Ok(@yaml.YMapping(pairs, _)) else { return }
+  guard result is Ok(@yaml.YMapping(pairs, _, _)) else { return }
   inspect(pairs.length(), content="1")
 }
 
@@ -58,7 +58,7 @@ test "yaml_parse_null" {
 test "yaml_parse_multi_key_mapping" {
   let yaml = "name: test\non: push\njobs: build"
   let result = @yaml.parse(yaml)
-  guard result is Ok(@yaml.YMapping(pairs, _)) else {
+  guard result is Ok(@yaml.YMapping(pairs, _, _)) else {
     println("Parse failed or not a mapping")
     return
   }
@@ -70,14 +70,14 @@ test "yaml_parse_multi_key_mapping" {
 test "yaml_parse_nested_mapping" {
   let yaml = "name: test\non:\n  push: main\njobs: build"
   let result = @yaml.parse(yaml)
-  guard result is Ok(@yaml.YMapping(pairs, _)) else {
+  guard result is Ok(@yaml.YMapping(pairs, _, _)) else {
     println("Parse failed or not a mapping")
     return
   }
   // Should have 3 pairs: name, true (on), jobs
   inspect(pairs.length(), content="3")
   // The second pair (on -> true in YAML 1.1) should have a nested mapping
-  guard pairs[1].value is @yaml.YMapping(nested, _) else {
+  guard pairs[1].value is @yaml.YMapping(nested, _, _) else {
     println("Expected nested mapping for 'on'")
     return
   }
@@ -89,14 +89,14 @@ test "yaml_parse_sibling_keys_with_empty_values" {
   // workflow_dispatch and push should be siblings, not nested
   let yaml = "on:\n  workflow_dispatch:\n  push: main"
   let result = @yaml.parse(yaml)
-  guard result is Ok(@yaml.YMapping(pairs, _)) else {
+  guard result is Ok(@yaml.YMapping(pairs, _, _)) else {
     println("Parse failed or not a mapping")
     return
   }
   // Should have 1 pair at top level (on/true)
   inspect(pairs.length(), content="1")
   // The value should be a mapping with 2 sibling keys
-  guard pairs[0].value is @yaml.YMapping(nested, _) else {
+  guard pairs[0].value is @yaml.YMapping(nested, _, _) else {
     println("Expected nested mapping")
     return
   }
@@ -130,14 +130,14 @@ test "yaml_parse_github_actions_on_section" {
     #|      - file.yml
   )
   let result = @yaml.parse(yaml)
-  guard result is Ok(@yaml.YMapping(pairs, _)) else {
+  guard result is Ok(@yaml.YMapping(pairs, _, _)) else {
     println("Parse failed or not a mapping")
     return
   }
   // Should have 1 pair at top level (on/true)
   inspect(pairs.length(), content="1")
   // The value should be a mapping with 3 sibling keys
-  guard pairs[0].value is @yaml.YMapping(on_value, _) else {
+  guard pairs[0].value is @yaml.YMapping(on_value, _, _) else {
     println("Expected nested mapping for 'on'")
     return
   }
@@ -163,20 +163,20 @@ test "yaml_parse_copilot_setup_steps" {
     #|    runs-on: ubuntu-latest
   )
   let result = @yaml.parse(yaml)
-  guard result is Ok(@yaml.YMapping(pairs, _)) else {
+  guard result is Ok(@yaml.YMapping(pairs, _, _)) else {
     println("Parse failed or not a mapping")
     return
   }
   // Should have 3 top-level keys: name, on (as "true"), jobs
   inspect(pairs.length(), content="3")
   // Check the "on" section has 3 keys
-  guard pairs[1].value is @yaml.YMapping(on_value, _) else {
+  guard pairs[1].value is @yaml.YMapping(on_value, _, _) else {
     println("Expected nested mapping for 'on'")
     return
   }
   inspect(on_value.length(), content="3")
   // Check the "jobs" section
-  guard pairs[2].value is @yaml.YMapping(jobs_value, _) else {
+  guard pairs[2].value is @yaml.YMapping(jobs_value, _, _) else {
     println("Expected nested mapping for 'jobs'")
     return
   }
@@ -195,26 +195,26 @@ test "yaml_parse_sequence_item_with_multiple_keys" {
     #|    run: hello
   )
   let result = @yaml.parse(yaml)
-  guard result is Ok(@yaml.YMapping(pairs, _)) else {
+  guard result is Ok(@yaml.YMapping(pairs, _, _)) else {
     println("Parse failed or not a mapping")
     return
   }
   inspect(pairs.length(), content="1")
   // steps should be a sequence
-  guard pairs[0].value is @yaml.YSequence(steps, _) else {
+  guard pairs[0].value is @yaml.YSequence(steps, _, _) else {
     println("Expected sequence for 'steps'")
     return
   }
   // Should have 2 step items
   inspect(steps.length(), content="2")
   // First step should have 2 keys: name, uses
-  guard steps[0] is @yaml.YMapping(step1, _) else {
+  guard steps[0] is @yaml.YMapping(step1, _, _) else {
     println("Expected mapping for first step")
     return
   }
   inspect(step1.length(), content="2")
   // Second step should have 2 keys: name, run
-  guard steps[1] is @yaml.YMapping(step2, _) else {
+  guard steps[1] is @yaml.YMapping(step2, _, _) else {
     println("Expected mapping for second step")
     return
   }
@@ -233,14 +233,14 @@ test "yaml_parse_sibling_mappings_same_indent" {
     #|    runs-on: ubuntu-latest
   )
   let result = @yaml.parse(yaml)
-  guard result is Ok(@yaml.YMapping(pairs, _)) else {
+  guard result is Ok(@yaml.YMapping(pairs, _, _)) else {
     println("Parse failed or not a mapping")
     return
   }
   // Should have 1 top-level key: jobs
   inspect(pairs.length(), content="1")
   // jobs should be a mapping with 2 sibling keys: build, lint
-  guard pairs[0].value is @yaml.YMapping(jobs_value, _) else {
+  guard pairs[0].value is @yaml.YMapping(jobs_value, _, _) else {
     println("Expected nested mapping for 'jobs'")
     return
   }
@@ -264,7 +264,7 @@ test "yaml_parse_sibling_mappings_same_indent" {
 test "yaml_parse_on_keyword_as_key" {
   let yaml = "on:\n  push: main"
   let result = @yaml.parse(yaml)
-  guard result is Ok(@yaml.YMapping(pairs, _)) else {
+  guard result is Ok(@yaml.YMapping(pairs, _, _)) else {
     println("Parse failed or not a mapping")
     return
   }

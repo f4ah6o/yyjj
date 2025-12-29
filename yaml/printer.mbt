@@ -15,8 +15,10 @@ fn node_to_doc(node : YamlNode, indent : Int) -> @pretty.Doc {
     YBool(false, _) => @pretty.text("false")
     YNumber(n, _) => @pretty.text(n)
     YString(s, style, _) => string_to_doc(s, style)
-    YSequence(elements, _) => sequence_to_doc(elements, indent)
-    YMapping(pairs, _) => mapping_to_doc(pairs, indent)
+    YSequence(elements, YamlCollectionStyle::Flow, _) => flow_sequence_to_doc(elements, indent)
+    YSequence(elements, YamlCollectionStyle::Block, _) => sequence_to_doc(elements, indent)
+    YMapping(pairs, YamlCollectionStyle::Flow, _) => flow_mapping_to_doc(pairs, indent)
+    YMapping(pairs, YamlCollectionStyle::Block, _) => mapping_to_doc(pairs, indent)
     YAlias(name, _) => @pretty.text("*" + name)
     YAnchor(name, value) =>
       @pretty.concat([@pretty.text("&" + name + " "), node_to_doc(value, indent)])
@@ -143,7 +145,7 @@ fn sequence_to_doc(elements : Array[YamlNode], indent : Int) -> @pretty.Doc {
     // When element is a mapping, the first key goes after "- " but subsequent
     // keys need to be indented. We handle this by splitting the mapping.
     match elem {
-      YMapping(pairs, trivia) if pairs.length() > 1 => {
+      YMapping(pairs, YamlCollectionStyle::Block, trivia) if pairs.length() > 1 => {
         // First pair: "- key: value"
         let first_pair = pairs[0]
         let first_key_leading = trivia_to_doc(first_pair.key_trivia.leading, true)
@@ -151,7 +153,7 @@ fn sequence_to_doc(elements : Array[YamlNode], indent : Int) -> @pretty.Doc {
         let first_value_doc = node_to_doc(first_pair.value, indent + 4)
         let first_key_trailing = trivia_to_doc(first_pair.key_trivia.trailing, false)
         let is_first_nested = match first_pair.value {
-          YSequence(_, _) | YMapping(_, _) => true
+          YSequence(_, _, _) | YMapping(_, _, _) => true
           _ => false
         }
         let first_doc = if is_first_nested {
@@ -169,7 +171,7 @@ fn sequence_to_doc(elements : Array[YamlNode], indent : Int) -> @pretty.Doc {
           let value_doc = node_to_doc(pair.value, indent + 4)
           let key_trailing = trivia_to_doc(pair.key_trivia.trailing, false)
           let is_nested = match pair.value {
-            YSequence(_, _) | YMapping(_, _) => true
+            YSequence(_, _, _) | YMapping(_, _, _) => true
             _ => false
           }
           if is_nested {
@@ -194,6 +196,26 @@ fn sequence_to_doc(elements : Array[YamlNode], indent : Int) -> @pretty.Doc {
 }
 
 ///|
+/// Convert a flow-style sequence to document: [elem1, elem2, ...]
+fn flow_sequence_to_doc(elements : Array[YamlNode], indent : Int) -> @pretty.Doc {
+  let elem_docs = elements.map(fn(e) { node_to_doc(e, indent) })
+  let joined = @pretty.join(elem_docs, @pretty.text(", "))
+  @pretty.concat([@pretty.text("["), joined, @pretty.text("]")])
+}
+
+///|
+/// Convert a flow-style mapping to document: {key1: value1, key2: value2, ...}
+fn flow_mapping_to_doc(pairs : Array[YKeyValue], indent : Int) -> @pretty.Doc {
+  let pair_docs = pairs.map(fn(p) {
+    let key_doc = node_to_doc(p.key, indent)
+    let value_doc = node_to_doc(p.value, indent)
+    @pretty.concat([key_doc, @pretty.text(": "), value_doc])
+  })
+  let joined = @pretty.join(pair_docs, @pretty.text(", "))
+  @pretty.concat([@pretty.text("{"), joined, @pretty.text("}")])
+}
+
+///|
 fn mapping_to_doc(pairs : Array[YKeyValue], indent : Int) -> @pretty.Doc {
   if pairs.is_empty() {
     return @pretty.text("{}")
@@ -209,7 +231,7 @@ fn mapping_to_doc(pairs : Array[YKeyValue], indent : Int) -> @pretty.Doc {
     let key_trailing = trivia_to_doc(pair.key_trivia.trailing, false)
     // Check if value is a nested structure
     let is_nested = match pair.value {
-      YSequence(_, _) | YMapping(_, _) => true
+      YSequence(_, _, _) | YMapping(_, _, _) => true
       _ => false
     }
     if is_nested {

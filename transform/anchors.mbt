@@ -102,7 +102,7 @@ fn extract_yaml_anchors_with_path(
 
   // Recursively extract from children
   match node {
-    @yaml.YMapping(pairs, _) => {
+    @yaml.YMapping(pairs, _, _) => {
       for pair in pairs {
         let key = extract_yaml_key(pair.key)
         let new_path = path + [key]
@@ -110,7 +110,7 @@ fn extract_yaml_anchors_with_path(
         anchors = anchors + child_anchors
       }
     }
-    @yaml.YSequence(elements, _) => {
+    @yaml.YSequence(elements, _, _) => {
       for i = 0; i < elements.length(); i = i + 1 {
         let new_path = path + [i.to_string()]
         let child_anchors = extract_yaml_anchors_with_path(elements[i], new_path)
@@ -135,8 +135,8 @@ fn yaml_value_kind(node : @yaml.YamlNode) -> String {
     @yaml.YBool(_, _) => "bool"
     @yaml.YNumber(_, _) => "number"
     @yaml.YString(_, _, _) => "string"
-    @yaml.YSequence(_, _) => "array"
-    @yaml.YMapping(_, _) => "object"
+    @yaml.YSequence(_, _, _) => "array"
+    @yaml.YMapping(_, _, _) => "object"
     @yaml.YAlias(_, _) => "alias"
     @yaml.YAnchor(_, _) => "anchor"
   }

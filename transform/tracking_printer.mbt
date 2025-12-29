@@ -250,8 +250,8 @@ fn TrackingPrinter::print_yaml_node(self : TrackingPrinter, node : @yaml.YamlNod
     @yaml.YBool(false, _) => self.write("false")
     @yaml.YNumber(n, _) => self.write(n)
     @yaml.YString(s, style, _) => self.print_yaml_string(s, style)
-    @yaml.YSequence(elements, _) => self.print_yaml_sequence(elements)
-    @yaml.YMapping(pairs, _) => self.print_yaml_mapping(pairs)
+    @yaml.YSequence(elements, _, _) => self.print_yaml_sequence(elements)
+    @yaml.YMapping(pairs, _, _) => self.print_yaml_mapping(pairs)
     @yaml.YAlias(name, _) => self.write("*" + name)
     @yaml.YAnchor(name, inner) => {
       self.write("&" + name)

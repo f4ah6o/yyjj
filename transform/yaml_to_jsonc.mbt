@@ -16,11 +16,11 @@ fn transform_yaml_node(
     @yaml.YBool(v, _) => @jsonc.JsonNode::bool_with_trivia(v, trivia)
     @yaml.YNumber(n, _) => @jsonc.JsonNode::number_with_trivia(n, trivia)
     @yaml.YString(s, _, _) => @jsonc.JsonNode::string_with_trivia(s, trivia)
-    @yaml.YSequence(elements, _) => {
+    @yaml.YSequence(elements, _, _) => {
       let json_elements = elements.map(fn(e) { transform_yaml_node(e, anchors) })
       @jsonc.JsonNode::array_with_trivia(json_elements, trivia)
     }
-    @yaml.YMapping(pairs, _) => {
+    @yaml.YMapping(pairs, _, _) => {
       let props = pairs.map(
         fn(p) {
           let key = extract_string_key(p.key)

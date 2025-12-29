@@ -32,11 +32,11 @@ fn strip_yaml_trivia(node : @yaml.YamlNode) -> @yaml.YamlNode {
     @yaml.YBool(v, _) => @yaml.YamlNode::bool_with_trivia(v, empty)
     @yaml.YNumber(v, _) => @yaml.YamlNode::number_with_trivia(v, empty)
     @yaml.YString(v, style, _) => @yaml.YamlNode::string_with_trivia(v, style, empty)
-    @yaml.YSequence(elements, _) => {
+    @yaml.YSequence(elements, style, _) => {
       let stripped = elements.map(strip_yaml_trivia)
-      @yaml.YamlNode::sequence_with_trivia(stripped, empty)
+      @yaml.YamlNode::sequence_with_style(stripped, style, empty)
     }
-    @yaml.YMapping(pairs, _) => {
+    @yaml.YMapping(pairs, style, _) => {
       let stripped = pairs.map(fn(kv) {
         @yaml.YKeyValue::new(
           strip_yaml_trivia(kv.key),
@@ -44,7 +44,7 @@ fn strip_yaml_trivia(node : @yaml.YamlNode) -> @yaml.YamlNode {
           strip_yaml_trivia(kv.value),
         )
       })
-      @yaml.YamlNode::mapping_with_trivia(stripped, empty)
+      @yaml.YamlNode::mapping_with_style(stripped, style, empty)
     }
     @yaml.YAlias(name, _) => @yaml.YamlNode::alias_with_trivia(name, empty)
     @yaml.YAnchor(name, inner) => @yaml.YamlNode::anchor(name, strip_yaml_trivia(inner))
@@ -695,12 +695,12 @@ fn collect_yaml_comments(node : @yaml.YamlNode, acc : Array[@common.Comment]) ->
   acc.push_iter(trivia.leading.iter())
   acc.push_iter(trivia.trailing.iter())
   match node {
-    @yaml.YSequence(elements, _) => {
+    @yaml.YSequence(elements, _, _) => {
       for e in elements {
         collect_yaml_comments(e, acc)
       }
     }
-    @yaml.YMapping(pairs, _) => {
+    @yaml.YMapping(pairs, _, _) => {
       for kv in pairs {
         acc.push_iter(kv.key_trivia.leading.iter())
         acc.push_iter(kv.key_trivia.trailing.iter())
@@ -1517,5 +1517,882 @@ test "pbt_large_string_handling" {
       }
     }),
     max_success=15,
+  )
+}
+
+// ============================================================================
+// Phase 1: YAML Anchor and Alias Generators
+// ============================================================================
+
+///|
+/// Generate a valid YAML anchor name
+/// YAML 1.2 spec: anchor names must start with alphanumeric or underscore,
+/// and can contain alphanumeric, underscore, and hyphen
+fn gen_anchor_name() -> @qc.Gen[String] {
+  // Generate first char (must be alphanumeric or underscore, not hyphen)
+  let gen_first : @qc.Gen[Char] = @qc.one_of([
+    @qc.pure('_'),
+    gen_char_range('a', 'z'),
+    gen_char_range('A', 'Z'),
+  ])
+
+  // Generate rest of name character set
+  let _gen_rest : @qc.Gen[Char] = @qc.one_of([
+    @qc.pure('_'),
+    @qc.pure('-'),
+    gen_char_range('a', 'z'),
+    gen_char_range('A', 'Z'),
+    gen_char_range('0', '9'),
+  ])
+
+  @qc.sized(fn(size) {
+    let name_len = (size / 5).clamp(min=1, max=20)
+
+    // Generate first character
+    gen_first.bind(fn(first) {
+      // Generate rest of name (name_len - 1 characters)
+      gen_rest_chars(name_len - 1).fmap(fn(rest) {
+        let buf = StringBuilder::new()
+        buf.write_char(first)
+        for c in rest {
+          buf.write_char(c)
+        }
+        buf.to_string()
+      })
+    })
+  })
+}
+
+///|
+/// Helper: generate a character in a range (inclusive)
+fn gen_char_range(lo : Char, hi : Char) -> @qc.Gen[Char] {
+  let gen_int : @qc.Gen[Int] = @qc.Gen::spawn()
+  gen_int.fmap(fn(n) {
+    let lo_code = lo.to_int()
+    let hi_code = hi.to_int()
+    let range = hi_code - lo_code + 1
+    let offset = (n % range).abs()
+    match (lo_code + offset).to_char() {
+      Some(c) => c
+      None => lo
+    }
+  })
+}
+
+///|
+/// Helper: generate an array of characters with specific length
+fn gen_rest_chars(count : Int) -> @qc.Gen[Array[Char]] {
+  if count <= 0 {
+    @qc.pure([])
+  } else {
+    let gen_rest : @qc.Gen[Char] = @qc.one_of([
+      @qc.pure('_'),
+      @qc.pure('-'),
+      gen_char_range('a', 'z'),
+      gen_char_range('A', 'Z'),
+      gen_char_range('0', '9'),
+    ])
+    gen_rest.bind(fn(first) {
+      gen_rest_chars(count - 1).fmap(fn(rest) {
+        [first] + rest
+      })
+    })
+  }
+}
+
+///|
+/// Generate a YAnchor node with a valid anchor name
+/// Creates an anchor definition: &name value
+fn gen_yaml_anchor(inner_gen : @qc.Gen[@yaml.YamlNode]) -> @qc.Gen[@yaml.YamlNode] {
+  gen_anchor_name().bind(fn(name) {
+    inner_gen.fmap(fn(inner) {
+      @yaml.YamlNode::anchor(name, inner)
+    })
+  })
+}
+
+///|
+/// Generate a YAlias node that references an existing anchor
+/// If no anchors are defined, returns a null node as fallback
+fn gen_yaml_alias(defined_anchors : Array[String]) -> @qc.Gen[@yaml.YamlNode] {
+  if defined_anchors.is_empty() {
+    // Fallback: return a null node
+    @qc.pure(@yaml.YamlNode::null_with_trivia(@common.Trivia::empty()))
+  } else {
+    // Select an existing anchor name uniformly
+    gen_anchor_from_list(defined_anchors).fmap(fn(name) {
+      @yaml.YamlNode::alias_with_trivia(name, @common.Trivia::empty())
+    })
+  }
+}
+
+///|
+/// Helper: select an anchor name from the list uniformly
+fn gen_anchor_from_list(anchors : Array[String]) -> @qc.Gen[String] {
+  let gen_int : @qc.Gen[Int] = @qc.Gen::spawn()
+  gen_int.fmap(fn(n) {
+    let index = n.abs() % anchors.length()
+    anchors[index]
+  })
+}
+
+///|
+/// Generate a YAML node with anchors and aliases (stateful version)
+/// Returns a tuple of (node, array of defined anchor names)
+fn gen_yaml_node_with_anchors_internal(max_depth : Int) -> @qc.Gen[(@yaml.YamlNode, Array[String])] {
+  if max_depth <= 0 {
+    // Base case: generate scalars, optionally with anchor
+    @qc.frequency([
+      // Scalar without anchor (most common)
+      (4, gen_yaml_scalar_with_any_style().fmap(fn(n) { (n, []) })),
+      // Scalar with anchor
+      (1, gen_yaml_anchor(gen_yaml_scalar_with_any_style()).fmap(fn(n) {
+        match n {
+          @yaml.YAnchor(name, _) => (n, [name])
+          _ => (n, [])
+        }
+      })),
+    ])
+  } else {
+    // Recursive case: can include sequences, mappings, anchors, aliases
+    @qc.frequency([
+      // Scalar without anchor
+      (3, gen_yaml_scalar_with_any_style().fmap(fn(n) { (n, []) })),
+
+      // Scalar with anchor
+      (1, gen_yaml_anchor(gen_yaml_scalar_with_any_style()).fmap(fn(n) {
+        match n {
+          @yaml.YAnchor(name, _) => (n, [name])
+          _ => (n, [])
+        }
+      })),
+
+      // Sequences with anchor tracking
+      (2, gen_yaml_sequence_with_anchors(max_depth - 1)),
+
+      // Mappings with anchor tracking
+      (2, gen_yaml_mapping_with_anchors(max_depth - 1)),
+    ])
+  }
+}
+
+///|
+/// Generate a YAML node with anchors and aliases (external API)
+/// Wrapper that discards the state for use in @qc.forall
+fn gen_yaml_node_with_anchor_alias() -> @qc.Gen[@yaml.YamlNode] {
+  gen_yaml_node_with_anchors_internal(3).fmap(fn(result) {
+    let (node, _anchors) = result
+    node
+  })
+}
+
+///|
+/// Generate a sequence that may contain anchored elements
+/// Returns (sequence_node, defined_anchor_names)
+fn gen_yaml_sequence_with_anchors(depth : Int) -> @qc.Gen[(@yaml.YamlNode, Array[String])] {
+  @qc.sized(fn(size) {
+    let len = (size / 3).clamp(min=0, max=5)
+    gen_yaml_sequence_with_anchors_at_length(len, depth)
+  })
+}
+
+///|
+/// Helper: Generate sequence of specific length with anchor tracking
+fn gen_yaml_sequence_with_anchors_at_length(len : Int, depth : Int) -> @qc.Gen[(@yaml.YamlNode, Array[String])] {
+  if len == 0 {
+    @qc.pure((@yaml.YamlNode::sequence_with_trivia([], @common.Trivia::empty()), []))
+  } else {
+    // Generate first element with state
+    gen_yaml_node_with_anchors_internal(depth).bind(fn(first_result) {
+      let (first_elem, first_anchors) = first_result
+
+      // Generate remaining elements, accumulating state
+      gen_yaml_sequence_elements_with_state(len - 1, depth, first_anchors).fmap(fn(rest_result) {
+        let (rest_elems, all_anchors) = rest_result
+        let all_elems = [first_elem] + rest_elems
+        (@yaml.YamlNode::sequence_with_trivia(all_elems, @common.Trivia::empty()), all_anchors)
+      })
+    })
+  }
+}
+
+///|
+/// Generate remaining sequence elements with accumulated anchor state
+fn gen_yaml_sequence_elements_with_state(count : Int, depth : Int, anchors : Array[String]) -> @qc.Gen[(Array[@yaml.YamlNode], Array[String])] {
+  if count == 0 {
+    @qc.pure(([], anchors))
+  } else {
+    @qc.frequency([
+      // Regular node (may define new anchors)
+      (3, gen_yaml_node_with_anchors_internal(depth).bind(fn(result) {
+        let (node, new_anchors) = result
+        let combined_anchors = array_concat(anchors, new_anchors)
+        gen_yaml_sequence_elements_with_state(count - 1, depth, combined_anchors).fmap(fn(rest) {
+          let (rest_elems, final_anchors) = rest
+          ([node] + rest_elems, final_anchors)
+        })
+      })),
+
+      // Alias to existing anchor (if anchors available)
+      (1, if anchors.is_empty() {
+        // No anchors yet, generate regular node instead
+        gen_yaml_node_with_anchors_internal(depth).bind(fn(result) {
+          let (node, new_anchors) = result
+          let combined_anchors = array_concat(anchors, new_anchors)
+          gen_yaml_sequence_elements_with_state(count - 1, depth, combined_anchors).fmap(fn(rest) {
+            let (rest_elems, final_anchors) = rest
+            ([node] + rest_elems, final_anchors)
+          })
+        })
+      } else {
+        gen_yaml_alias(anchors).bind(fn(alias_node) {
+          gen_yaml_sequence_elements_with_state(count - 1, depth, anchors).fmap(fn(rest) {
+            let (rest_elems, final_anchors) = rest
+            ([alias_node] + rest_elems, final_anchors)
+          })
+        })
+      }),
+    ])
+  }
+}
+
+///|
+/// Generate a mapping that may contain anchored values
+/// Returns (mapping_node, defined_anchor_names)
+fn gen_yaml_mapping_with_anchors(depth : Int) -> @qc.Gen[(@yaml.YamlNode, Array[String])] {
+  @qc.sized(fn(size) {
+    let len = (size / 4).clamp(min=0, max=4)
+    gen_yaml_mapping_with_anchors_at_length(len, depth)
+  })
+}
+
+///|
+/// Helper: Generate mapping of specific length with anchor tracking
+fn gen_yaml_mapping_with_anchors_at_length(len : Int, depth : Int) -> @qc.Gen[(@yaml.YamlNode, Array[String])] {
+  if len == 0 {
+    @qc.pure((@yaml.YamlNode::mapping_with_trivia([], @common.Trivia::empty()), []))
+  } else {
+    // Generate first key-value pair with state
+    gen_safe_key().bind(fn(key) {
+      let key_node = @yaml.YamlNode::string_with_trivia(
+        key,
+        @yaml.YamlScalarStyle::plain(),
+        @common.Trivia::empty()
+      )
+
+      gen_yaml_node_with_anchors_internal(depth).bind(fn(value_result) {
+        let (value, first_anchors) = value_result
+
+        gen_yaml_mapping_elements_with_state(len - 1, depth, first_anchors).fmap(fn(rest_result) {
+          let (rest_pairs, all_anchors) = rest_result
+          let first_kv = @yaml.YKeyValue::new(
+            key_node,
+            @common.Trivia::empty(),
+            value
+          )
+          let all_pairs = [first_kv] + rest_pairs
+          (@yaml.YamlNode::mapping_with_trivia(all_pairs, @common.Trivia::empty()), all_anchors)
+        })
+      })
+    })
+  }
+}
+
+///|
+/// Generate remaining mapping pairs with accumulated anchor state
+fn gen_yaml_mapping_elements_with_state(count : Int, depth : Int, anchors : Array[String]) -> @qc.Gen[(Array[@yaml.YKeyValue], Array[String])] {
+  if count == 0 {
+    @qc.pure(([], anchors))
+  } else {
+    @qc.frequency([
+      // Regular value (may define new anchors)
+      (3, gen_safe_key().bind(fn(key) {
+        let key_node = @yaml.YamlNode::string_with_trivia(
+          key,
+          @yaml.YamlScalarStyle::plain(),
+          @common.Trivia::empty()
+        )
+
+        gen_yaml_node_with_anchors_internal(depth).bind(fn(value_result) {
+          let (value, new_anchors) = value_result
+          let combined_anchors = array_concat(anchors, new_anchors)
+          gen_yaml_mapping_elements_with_state(count - 1, depth, combined_anchors).fmap(fn(rest) {
+            let (rest_pairs, final_anchors) = rest
+            let kv = @yaml.YKeyValue::new(key_node, @common.Trivia::empty(), value)
+            ([kv] + rest_pairs, final_anchors)
+          })
+        })
+      })),
+
+      // Aliased value (if anchors available)
+      (1, if anchors.is_empty() {
+        // No anchors yet, generate regular value
+        gen_safe_key().bind(fn(key) {
+          let key_node = @yaml.YamlNode::string_with_trivia(
+            key,
+            @yaml.YamlScalarStyle::plain(),
+            @common.Trivia::empty()
+          )
+
+          gen_yaml_node_with_anchors_internal(depth).bind(fn(value_result) {
+            let (value, new_anchors) = value_result
+            let combined_anchors = array_concat(anchors, new_anchors)
+            gen_yaml_mapping_elements_with_state(count - 1, depth, combined_anchors).fmap(fn(rest) {
+              let (rest_pairs, final_anchors) = rest
+              let kv = @yaml.YKeyValue::new(key_node, @common.Trivia::empty(), value)
+              ([kv] + rest_pairs, final_anchors)
+            })
+          })
+        })
+      } else {
+        gen_safe_key().bind(fn(key) {
+          let key_node = @yaml.YamlNode::string_with_trivia(
+            key,
+            @yaml.YamlScalarStyle::plain(),
+            @common.Trivia::empty()
+          )
+
+          gen_yaml_alias(anchors).bind(fn(alias_value) {
+            gen_yaml_mapping_elements_with_state(count - 1, depth, anchors).fmap(fn(rest) {
+              let (rest_pairs, final_anchors) = rest
+              let kv = @yaml.YKeyValue::new(key_node, @common.Trivia::empty(), alias_value)
+              ([kv] + rest_pairs, final_anchors)
+            })
+          })
+        })
+      }),
+    ])
+  }
+}
+
+///|
+/// Extract all anchor names defined in the tree
+fn extract_anchor_names(node : @yaml.YamlNode) -> Array[String] {
+  match node {
+    @yaml.YAnchor(name, _) => [name]
+    @yaml.YSequence(elements, _, _) => {
+      let mut names = []
+      for e in elements {
+        names = array_concat(names, extract_anchor_names(e))
+      }
+      names
+    }
+    @yaml.YMapping(pairs, _, _) => {
+      let mut names = []
+      for p in pairs {
+        names = array_concat(names, extract_anchor_names(p.key))
+        names = array_concat(names, extract_anchor_names(p.value))
+      }
+      names
+    }
+    _ => []
+  }
+}
+
+///|
+/// Validate that all YAlias nodes reference existing YAnchor nodes
+fn validate_anchor_references(node : @yaml.YamlNode) -> Bool {
+  let anchors = extract_anchor_names(node)
+  validate_anchors_in_node(node, anchors)
+}
+
+///|
+/// Validate that all aliases reference existing anchors in a subtree
+fn validate_anchors_in_node(node : @yaml.YamlNode, anchors : Array[String]) -> Bool {
+  match node {
+    @yaml.YAlias(name, _) => array_contains(anchors, name)
+    @yaml.YAnchor(_, inner) => validate_anchors_in_node(inner, anchors)
+    @yaml.YSequence(elements, _, _) => {
+      for e in elements {
+        if not(validate_anchors_in_node(e, anchors)) {
+          return false
+        }
+      }
+      true
+    }
+    @yaml.YMapping(pairs, _, _) => {
+      for p in pairs {
+        if not(validate_anchors_in_node(p.key, anchors)) || not(validate_anchors_in_node(p.value, anchors)) {
+          return false
+        }
+      }
+      true
+    }
+    _ => true
+  }
+}
+
+///|
+/// Helper: check if array contains a string
+fn array_contains(arr : Array[String], target : String) -> Bool {
+  for elem in arr {
+    if elem == target {
+      return true
+    }
+  }
+  false
+}
+
+///|
+/// Helper: concatenate two arrays
+fn[T] array_concat(a : Array[T], b : Array[T]) -> Array[T] {
+  a + b
+}
+
+///|
+/// PBT: YAML with anchors/aliases round-trips correctly
+test "pbt_yaml_anchor_alias_roundtrip" {
+  @qc.quick_check(
+    @qc.forall(gen_yaml_node_with_anchor_alias(), fn(node) {
+      let printed = @yaml.print(node)
+      match @yaml.parse(printed) {
+        Ok(parsed) => {
+          // Compare structure, ignoring trivia
+          strip_yaml_trivia(node) == strip_yaml_trivia(parsed)
+        }
+        Err(_) => false
+      }
+    }),
+    max_success=100,
+  )
+}
+
+///|
+/// PBT: All aliases in generated YAML reference valid anchors
+test "pbt_yaml_aliases_are_valid" {
+  @qc.quick_check(
+    @qc.forall(gen_yaml_node_with_anchor_alias(), fn(node) {
+      validate_anchor_references(node)
+    }),
+    max_success=100,
+  )
+}
+
+// ============================================================================
+// Phase 2: Complete Scalar Style Generators
+// ============================================================================
+
+///|
+/// Generate a plain YAML string (unquoted)
+fn gen_yaml_plain_string() -> @qc.Gen[@yaml.YamlNode] {
+  @qc.frequency([
+    // Safe alphanumeric strings
+    (5, gen_safe_key().fmap(fn(s) {
+      @yaml.YamlNode::string_with_trivia(s, @yaml.YamlScalarStyle::plain(), @common.Trivia::empty())
+    })),
+
+    // Strings that look like keywords (will be handled by printer)
+    (1, gen_yaml_keyword_like_string().fmap(fn(s) {
+      @yaml.YamlNode::string_with_trivia(s, @yaml.YamlScalarStyle::plain(), @common.Trivia::empty())
+    })),
+
+    // Empty string
+    (1, @qc.pure(@yaml.YamlNode::string_with_trivia("", @yaml.YamlScalarStyle::plain(), @common.Trivia::empty()))),
+
+    // Strings with hyphens, dots (common in keys)
+    (2, gen_safe_string().fmap(fn(s) {
+      let safe = if s.is_empty() { "key" } else { s }
+      @yaml.YamlNode::string_with_trivia(safe, @yaml.YamlScalarStyle::plain(), @common.Trivia::empty())
+    })),
+  ])
+}
+
+///|
+/// Generate a single-quoted YAML string
+fn gen_yaml_single_quoted_string() -> @qc.Gen[@yaml.YamlNode] {
+  @qc.frequency([
+    // Regular strings
+    (5, gen_safe_string().fmap(fn(s) {
+      @yaml.YamlNode::string_with_trivia(s, @yaml.YamlScalarStyle::single_quoted(), @common.Trivia::empty())
+    })),
+
+    // Strings with single quotes (will be escaped as '')
+    (2, @qc.one_of([
+      @qc.pure("it's"),
+      @qc.pure("don't"),
+      @qc.pure("can't"),
+      @qc.pure("John's"),
+    ]).fmap(fn(s) {
+      @yaml.YamlNode::string_with_trivia(s, @yaml.YamlScalarStyle::single_quoted(), @common.Trivia::empty())
+    })),
+
+    // Unicode strings
+    (2, gen_unicode_string().fmap(fn(s) {
+      @yaml.YamlNode::string_with_trivia(s, @yaml.YamlScalarStyle::single_quoted(), @common.Trivia::empty())
+    })),
+
+    // Empty string
+    (1, @qc.pure(@yaml.YamlNode::string_with_trivia("", @yaml.YamlScalarStyle::single_quoted(), @common.Trivia::empty()))),
+  ])
+}
+
+///|
+/// Generate a double-quoted YAML string
+fn gen_yaml_double_quoted_string() -> @qc.Gen[@yaml.YamlNode] {
+  @qc.frequency([
+    // Regular strings
+    (4, gen_safe_string().fmap(fn(s) {
+      @yaml.YamlNode::string_with_trivia(s, @yaml.YamlScalarStyle::double_quoted(), @common.Trivia::empty())
+    })),
+
+    // Strings with escape sequences
+    (2, gen_escape_needed_string().fmap(fn(s) {
+      @yaml.YamlNode::string_with_trivia(s, @yaml.YamlScalarStyle::double_quoted(), @common.Trivia::empty())
+    })),
+
+    // Unicode strings
+    (2, gen_unicode_string().fmap(fn(s) {
+      @yaml.YamlNode::string_with_trivia(s, @yaml.YamlScalarStyle::double_quoted(), @common.Trivia::empty())
+    })),
+
+    // Empty string
+    (1, @qc.pure(@yaml.YamlNode::string_with_trivia("", @yaml.YamlScalarStyle::double_quoted(), @common.Trivia::empty()))),
+
+    // Strings with special YAML characters
+    (1, @qc.one_of([
+      @qc.pure("key: value"),
+      @qc.pure("[list]"),
+      @qc.pure("{mapping}"),
+      @qc.pure("comment # text"),
+    ]).fmap(fn(s) {
+      @yaml.YamlNode::string_with_trivia(s, @yaml.YamlScalarStyle::double_quoted(), @common.Trivia::empty())
+    })),
+  ])
+}
+
+///|
+/// Generate a literal block scalar (| style)
+fn gen_yaml_literal_block() -> @qc.Gen[@yaml.YamlNode] {
+  @qc.sized(fn(size) {
+    let num_lines = (size / 10).clamp(min=1, max=5)
+
+    @qc.frequency([
+      // Single line
+      (3, gen_safe_string().fmap(fn(s) {
+        let content = if s.is_empty() { "text" } else { s }
+        @yaml.YamlNode::string_with_trivia(content, @yaml.YamlScalarStyle::literal(), @common.Trivia::empty())
+      })),
+
+      // Multi-line string (simulated with newlines)
+      (2, gen_multi_line_content(num_lines).fmap(fn(content) {
+        @yaml.YamlNode::string_with_trivia(content, @yaml.YamlScalarStyle::literal(), @common.Trivia::empty())
+      })),
+
+      // Preserved whitespace examples
+      (1, @qc.one_of([
+        @qc.pure("  indented\n  also indented"),
+        @qc.pure("line1\n\nline3"),
+        @qc.pure("  "),
+      ]).fmap(fn(s) {
+        @yaml.YamlNode::string_with_trivia(s, @yaml.YamlScalarStyle::literal(), @common.Trivia::empty())
+      })),
+    ])
+  })
+}
+
+///|
+/// Helper: generate multi-line content
+fn gen_multi_line_content(num_lines : Int) -> @qc.Gen[String] {
+  if num_lines <= 1 {
+    gen_safe_string().fmap(fn(s) {
+      if s.is_empty() { "line1" } else { s }
+    })
+  } else {
+    gen_safe_string().bind(fn(first) {
+      gen_multi_line_content(num_lines - 1).fmap(fn(rest) {
+        let safe_first = if first.is_empty() { "line" } else { first }
+        safe_first + "\n" + rest
+      })
+    })
+  }
+}
+
+///|
+/// Generate a folded block scalar (> style)
+fn gen_yaml_folded_block() -> @qc.Gen[@yaml.YamlNode] {
+  @qc.sized(fn(size) {
+    let num_lines = (size / 10).clamp(min=1, max=5)
+
+    @qc.frequency([
+      // Single line
+      (3, gen_safe_string().fmap(fn(s) {
+        let content = if s.is_empty() { "text" } else { s }
+        @yaml.YamlNode::string_with_trivia(content, @yaml.YamlScalarStyle::folded(), @common.Trivia::empty())
+      })),
+
+      // Multi-line string (newlines become spaces in folded)
+      (2, gen_multi_line_content(num_lines).fmap(fn(content) {
+        @yaml.YamlNode::string_with_trivia(content, @yaml.YamlScalarStyle::folded(), @common.Trivia::empty())
+      })),
+
+      // Text that should be folded
+      (1, @qc.one_of([
+        @qc.pure("wrapped\ntext\nbecomes single line"),
+        @qc.pure("paragraph one\n\nparagraph two"),
+      ]).fmap(fn(s) {
+        @yaml.YamlNode::string_with_trivia(s, @yaml.YamlScalarStyle::folded(), @common.Trivia::empty())
+      })),
+    ])
+  })
+}
+
+///|
+/// Generate a YAML string with any style (weighted distribution)
+fn gen_yaml_scalar_with_any_style() -> @qc.Gen[@yaml.YamlNode] {
+  @qc.frequency([
+    // Plain style (most common)
+    (4, gen_yaml_plain_string()),
+
+    // Double-quoted (common for special characters)
+    (3, gen_yaml_double_quoted_string()),
+
+    // Single-quoted
+    (2, gen_yaml_single_quoted_string()),
+
+    // Literal block
+    (1, gen_yaml_literal_block()),
+
+    // Folded block
+    (1, gen_yaml_folded_block()),
+
+    // Non-string scalars
+    (2, @qc.one_of([
+      @qc.pure(@yaml.YamlNode::null_with_trivia(@common.Trivia::empty())),
+      { let g : @qc.Gen[Bool] = @qc.Gen::spawn(); g.fmap(fn(b) { @yaml.YamlNode::bool_with_trivia(b, @common.Trivia::empty()) }) },
+      gen_valid_number().fmap(fn(n) { @yaml.YamlNode::number_with_trivia(n, @common.Trivia::empty()) }),
+    ])),
+  ])
+}
+
+///|
+/// PBT: All scalar styles round-trip correctly
+test "pbt_yaml_all_scalar_styles_roundtrip" {
+  @qc.quick_check(
+    @qc.forall(gen_yaml_scalar_with_any_style(), fn(node) {
+      let printed = @yaml.print(node)
+      match @yaml.parse(printed) {
+        Ok(parsed) => {
+          // For scalar styles, compare the actual string content for strings
+          match (node, parsed) {
+            (@yaml.YString(orig_s, _, _), @yaml.YString(parsed_s, _, _)) => {
+              orig_s == parsed_s
+            }
+            _ => strip_yaml_trivia(node) == strip_yaml_trivia(parsed)
+          }
+        }
+        Err(_) => false
+      }
+    }),
+    max_success=200,
+  )
+}
+
+///|
+/// PBT: Plain scalars preserve content appropriately
+test "pbt_yaml_plain_scalar_content_preserved" {
+  @qc.quick_check(
+    @qc.forall(gen_yaml_plain_string(), fn(node) {
+      let printed = @yaml.print(node)
+      match @yaml.parse(printed) {
+        Ok(@yaml.YString(parsed_s, _, _)) => {
+          match node {
+            @yaml.YString(orig_s, _, _) => orig_s == parsed_s
+            _ => false
+          }
+        }
+        _ => false
+      }
+    }),
+    max_success=100,
+  )
+}
+
+///|
+/// PBT: Literal block scalars preserve formatting
+test "pbt_yaml_literal_block_preserves_formatting" {
+  @qc.quick_check(
+    @qc.forall(gen_yaml_literal_block(), fn(node) {
+      let printed = @yaml.print(node)
+      match @yaml.parse(printed) {
+        Ok(parsed) => strip_yaml_trivia(node) == strip_yaml_trivia(parsed)
+        Err(_) => false
+      }
+    }),
+    max_success=50,
+  )
+}
+
+///|
+/// PBT: Folded block scalars preserve formatting
+test "pbt_yaml_folded_block_preserves_formatting" {
+  @qc.quick_check(
+    @qc.forall(gen_yaml_folded_block(), fn(node) {
+      let printed = @yaml.print(node)
+      match @yaml.parse(printed) {
+        Ok(parsed) => strip_yaml_trivia(node) == strip_yaml_trivia(parsed)
+        Err(_) => false
+      }
+    }),
+    max_success=50,
+  )
+}
+
+// ============================================================================
+// Phase 3.5: Flow vs Block Collection Style Generators
+// ============================================================================
+
+///|
+/// Generate a YAML sequence with Flow style ([a, b, c])
+fn gen_yaml_flow_sequence(inner_gen : @qc.Gen[@yaml.YamlNode]) -> @qc.Gen[@yaml.YamlNode] {
+  let flow_style = @yaml.YamlCollectionStyle::flow()
+  // Generate 1-3 elements with Flow style
+  @qc.one_of(
+    [
+      // Single element
+      inner_gen.fmap(fn(e) {
+        @yaml.YamlNode::sequence_with_style([e], flow_style, @common.Trivia::empty())
+      }),
+      // Two elements
+      inner_gen.bind(fn(e1) {
+        inner_gen.fmap(fn(e2) {
+          @yaml.YamlNode::sequence_with_style([e1, e2], flow_style, @common.Trivia::empty())
+        })
+      }),
+      // Three elements
+      inner_gen.bind(fn(e1) {
+        inner_gen.bind(fn(e2) {
+          inner_gen.fmap(fn(e3) {
+            @yaml.YamlNode::sequence_with_style([e1, e2, e3], flow_style, @common.Trivia::empty())
+          })
+        })
+      }),
+    ],
+  )
+}
+
+///|
+/// Generate a YAML mapping with Flow style ({key: value})
+fn gen_yaml_flow_mapping(
+  key_gen : @qc.Gen[@yaml.YamlNode],
+  value_gen : @qc.Gen[@yaml.YamlNode],
+) -> @qc.Gen[@yaml.YamlNode] {
+  let flow_style = @yaml.YamlCollectionStyle::flow()
+  key_gen.bind(fn(key) {
+    value_gen.fmap(fn(value) {
+      let pair = @yaml.YKeyValue::new(key, @common.Trivia::empty(), value)
+      @yaml.YamlNode::mapping_with_style([pair], flow_style, @common.Trivia::empty())
+    })
+  })
+}
+
+///|
+/// Generate a YAML node with full style support (scalar styles + collection styles)
+fn gen_yaml_node_with_full_style(max_depth : Int) -> @qc.Gen[@yaml.YamlNode] {
+  let empty = @common.Trivia::empty()
+  if max_depth <= 0 {
+    @qc.frequency([
+      (5, gen_yaml_scalar_with_any_style()),
+      (1, gen_yaml_scalar_with_trivia()),
+    ])
+  } else {
+    let inner = gen_yaml_node_with_full_style(max_depth - 1)
+    @qc.frequency([
+      (6, gen_yaml_scalar_with_any_style()),
+      (3, inner.fmap(fn(e) { @yaml.YamlNode::sequence_with_trivia([e], empty) })),
+      (3, inner.bind(fn(k) { inner.fmap(fn(v) {
+        let pair = @yaml.YKeyValue::new(k, @common.Trivia::empty(), v)
+        @yaml.YamlNode::mapping_with_trivia([pair], empty)
+      }) })),
+      (1, gen_yaml_anchor(inner)),
+    ])
+  }
+}
+
+///|
+/// PBT: Flow-style sequences start with [
+test "pbt_yaml_flow_sequence_format" {
+  let scalar_gen = gen_yaml_scalar_with_any_style()
+  let flow_seq_gen = gen_yaml_flow_sequence(scalar_gen)
+  @qc.quick_check(
+    @qc.forall(flow_seq_gen, fn(node) {
+      let printed = @yaml.print(node)
+      // Flow sequences should start with [
+      printed.has_prefix("[")
+    }),
+    max_success=50,
+  )
+}
+
+///|
+/// PBT: Flow-style mappings start with {
+test "pbt_yaml_flow_mapping_format" {
+  let scalar_gen = gen_yaml_scalar_with_any_style()
+  let flow_map_gen = gen_yaml_flow_mapping(scalar_gen, scalar_gen)
+  @qc.quick_check(
+    @qc.forall(flow_map_gen, fn(node) {
+      let printed = @yaml.print(node)
+      // Flow mappings should start with {
+      printed.has_prefix("{")
+    }),
+    max_success=50,
+  )
+}
+
+///|
+/// PBT: Flow-style sequences roundtrip correctly
+test "pbt_yaml_flow_sequence_roundtrip" {
+  let scalar_gen = gen_yaml_scalar_with_any_style()
+  let flow_seq_gen = gen_yaml_flow_sequence(scalar_gen)
+  @qc.quick_check(
+    @qc.forall(flow_seq_gen, fn(node) {
+      let printed = @yaml.print(node)
+      match @yaml.parse(printed) {
+        Ok(parsed) => {
+          match parsed {
+            @yaml.YSequence(_, @yaml.YamlCollectionStyle::Flow, _) => true
+            _ => false  // Parser didn't preserve Flow style
+          }
+        }
+        Err(_) => false
+      }
+    }),
+    max_success=50,
+  )
+}
+
+///|
+/// PBT: Flow-style mappings roundtrip correctly
+test "pbt_yaml_flow_mapping_roundtrip" {
+  let scalar_gen = gen_yaml_scalar_with_any_style()
+  let flow_map_gen = gen_yaml_flow_mapping(scalar_gen, scalar_gen)
+  @qc.quick_check(
+    @qc.forall(flow_map_gen, fn(node) {
+      let printed = @yaml.print(node)
+      match @yaml.parse(printed) {
+        Ok(parsed) => {
+          match parsed {
+            @yaml.YMapping(_, @yaml.YamlCollectionStyle::Flow, _) => true
+            _ => false  // Parser didn't preserve Flow style
+          }
+        }
+        Err(_) => false
+      }
+    }),
+    max_success=50,
+  )
+}
+
+///|
+/// PBT: Full-style YAML nodes roundtrip correctly
+test "pbt_yaml_full_style_roundtrip" {
+  @qc.quick_check(
+    @qc.forall(gen_yaml_node_with_full_style(4), fn(node) {
+      let printed = @yaml.print(node)
+      match @yaml.parse(printed) {
+        Ok(parsed) => strip_yaml_trivia(node) == strip_yaml_trivia(parsed)
+        Err(_) => false
+      }
+    }),
+    max_success=100,
   )
 }
