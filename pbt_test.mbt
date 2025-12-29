@@ -1341,3 +1341,181 @@ test "pbt_mapping_lookup_roundtrip" {
     max_success=100,
   )
 }
+
+// ============================================================================
+// Phase 3: Large File Tests
+// ============================================================================
+
+///|
+/// Generate a wide JSON object with many keys (simulates Kubernetes manifests)
+fn gen_wide_json_object(num_keys : Int) -> @qc.Gen[@jsonc.JsonNode] {
+  @qc.sized(fn(size) {
+    let actual_keys = (size * num_keys / 10).clamp(min=10, max=num_keys)
+    let empty = @common.Trivia::empty()
+    // Generate scalar values for each key (memory efficient)
+    let properties : Array[@jsonc.JProperty] = []
+    let mut i = 0
+    while i < actual_keys {
+      let key = "key_" + i.to_string()
+      properties.push(@jsonc.JProperty::new(key, empty, @jsonc.JsonNode::string_with_trivia("value", empty)))
+      i = i + 1
+    }
+    @qc.pure(@jsonc.JsonNode::object_with_trivia(properties, empty))
+  })
+}
+
+///|
+/// Generate a long JSON array with many elements
+fn gen_long_json_array(num_elements : Int) -> @qc.Gen[@jsonc.JsonNode] {
+  @qc.sized(fn(size) {
+    let actual_len = (size * num_elements / 10).clamp(min=10, max=num_elements)
+    let empty = @common.Trivia::empty()
+    let elements : Array[@jsonc.JsonNode] = []
+    let mut i = 0
+    while i < actual_len {
+      elements.push(@jsonc.JsonNode::string_with_trivia("item_" + i.to_string(), empty))
+      i = i + 1
+    }
+    @qc.pure(@jsonc.JsonNode::array_with_trivia(elements, empty))
+  })
+}
+
+///|
+/// Generate a mixed-size JSON with configurable depth and width
+fn gen_mixed_size_json(depth : Int, width : Int) -> @qc.Gen[@jsonc.JsonNode] {
+  let empty = @common.Trivia::empty()
+  gen_mixed_json_at_depth(depth, width, empty)
+}
+
+///|
+/// Helper: Generate mixed JSON at specific depth
+fn gen_mixed_json_at_depth(depth : Int, width : Int, trivia : @common.Trivia) -> @qc.Gen[@jsonc.JsonNode] {
+  if depth <= 0 {
+    gen_json_scalar()
+  } else {
+    @qc.frequency(
+      [
+        // Nested array with width elements
+        (
+          1,
+          @qc.sized(fn(size) {
+            let actual_width = (size * width / 10).clamp(min=2, max=width)
+            let elements : Array[@jsonc.JsonNode] = []
+            let mut i = 0
+            while i < actual_width {
+              elements.push(@jsonc.JsonNode::string_with_trivia("item", @common.Trivia::empty()))
+              i = i + 1
+            }
+            gen_mixed_json_at_depth(depth - 1, width, @common.Trivia::empty()).fmap(fn(inner) {
+              elements.push(inner)
+              @jsonc.JsonNode::array_with_trivia(elements, trivia)
+            })
+          }),
+        ),
+        // Nested object with width keys
+        (
+          1,
+          @qc.sized(fn(size) {
+            let actual_width = (size * width / 10).clamp(min=2, max=width)
+            let properties : Array[@jsonc.JProperty] = []
+            let mut i = 0
+            while i < actual_width {
+              properties.push(@jsonc.JProperty::new(
+                "key_" + i.to_string(),
+                @common.Trivia::empty(),
+                @jsonc.JsonNode::string_with_trivia("value", @common.Trivia::empty()),
+              ))
+              i = i + 1
+            }
+            gen_mixed_json_at_depth(depth - 1, width, @common.Trivia::empty()).fmap(fn(inner) {
+              properties.push(@jsonc.JProperty::new(
+                "nested",
+                @common.Trivia::empty(),
+                inner,
+              ))
+              @jsonc.JsonNode::object_with_trivia(properties, trivia)
+            })
+          }),
+        ),
+        // Scalar at this level
+        (4, gen_json_scalar()),
+      ],
+    )
+  }
+}
+
+///|
+/// Generate a string with approximately target_bytes size
+fn gen_string_with_size(target_bytes : Int) -> @qc.Gen[String] {
+  @qc.pure({
+    let result = StringBuilder::new()
+    let chunk = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+    let chunk_len = chunk.length()
+    let remaining = target_bytes
+    let mut i = 0
+    while i < remaining {
+      result.write_string(chunk)
+      i = i + chunk_len
+    }
+    result.to_string()
+  })
+}
+
+///|
+/// PBT: Wide objects (many keys) survive JSONC round-trip
+test "pbt_large_wide_object_roundtrip" {
+  @qc.quick_check(
+    @qc.forall(gen_wide_json_object(500), fn(node) {
+      let printed = @jsonc.print(node)
+      match @jsonc.parse(printed) {
+        Ok(parsed) => strip_jsonc_trivia(node) == strip_jsonc_trivia(parsed)
+        Err(_) => false
+      }
+    }),
+    max_success=20,
+  )
+}
+
+///|
+/// PBT: Long arrays survive JSONC round-trip
+test "pbt_large_array_roundtrip" {
+  @qc.quick_check(
+    @qc.forall(gen_long_json_array(1000), fn(node) {
+      let printed = @jsonc.print(node)
+      match @jsonc.parse(printed) {
+        Ok(parsed) => strip_jsonc_trivia(node) == strip_jsonc_trivia(parsed)
+        Err(_) => false
+      }
+    }),
+    max_success=20,
+  )
+}
+
+///|
+/// PBT: Mixed size structures survive transformation round-trip
+test "pbt_mixed_size_stress_test" {
+  @qc.quick_check(
+    @qc.forall(gen_mixed_size_json(5, 50), fn(node) {
+      let yaml_node = @transform.jsonc_to_yaml(node)
+      let back = @transform.yaml_to_jsonc(yaml_node)
+      strip_jsonc_trivia(node) == strip_jsonc_trivia(back)
+    }),
+    max_success=15,
+  )
+}
+
+///|
+/// PBT: Large strings survive JSONC round-trip
+test "pbt_large_string_handling" {
+  @qc.quick_check(
+    @qc.forall(gen_string_with_size(10000), fn(s) {
+      let node = @jsonc.JsonNode::string(s)
+      let printed = @jsonc.print(node)
+      match @jsonc.parse(printed) {
+        Ok(@jsonc.JString(parsed, _)) => s == parsed
+        _ => false
+      }
+    }),
+    max_success=15,
+  )
+}
