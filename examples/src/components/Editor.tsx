@@ -1,14 +1,20 @@
-import { useRef, useEffect } from "preact/hooks";
+import { useRef, useEffect, useImperativeHandle, useLayoutEffect } from "preact/hooks";
 import { EditorView, placeholder } from "@codemirror/view";
 import { EditorState, type Extension } from "@codemirror/state";
 import { basicSetup } from "codemirror";
 import type { Signal } from "@preact/signals";
+
+export interface EditorRef {
+	scrollTo(ratio: number): void;
+}
 
 interface EditorProps {
 	content: Signal<string>;
 	extensions: Extension[];
 	placeholder?: string;
 	onChange: (value: string) => void;
+	onScroll?: (ratio: number) => void;
+	editorRef?: { current: EditorRef | null };
 }
 
 export function Editor({
@@ -16,10 +22,36 @@ export function Editor({
 	extensions,
 	placeholder: placeholderText,
 	onChange,
+	onScroll,
+	editorRef,
 }: EditorProps) {
 	const containerRef = useRef<HTMLDivElement>(null);
 	const viewRef = useRef<EditorView | null>(null);
 	const isExternalUpdate = useRef(false);
+	const isScrollingFromOutside = useRef(false);
+
+	// Expose scrollTo method to parent
+	useImperativeHandle(
+		editorRef,
+		() => ({
+			scrollTo(ratio: number) {
+				const view = viewRef.current;
+				if (!view) return;
+				const scroller = view.dom.querySelector(".cm-scroller") as HTMLElement;
+				if (!scroller) return;
+
+				const scrollHeight = scroller.scrollHeight - scroller.clientHeight;
+				const targetScrollTop = scrollHeight * ratio;
+
+				isScrollingFromOutside.current = true;
+				scroller.scrollTop = targetScrollTop;
+				requestAnimationFrame(() => {
+					isScrollingFromOutside.current = false;
+				});
+			},
+		}),
+		[],
+	);
 
 	// Create editor on mount
 	useEffect(() => {
@@ -52,6 +84,26 @@ export function Editor({
 
 		return () => viewRef.current?.destroy();
 	}, []);
+
+	// Setup scroll listener after view is created
+	useLayoutEffect(() => {
+		const view = viewRef.current;
+		if (!view || !onScroll) return;
+
+		const scroller = view.dom.querySelector(".cm-scroller") as HTMLElement;
+		if (!scroller) return;
+
+		const handleScroll = () => {
+			if (isScrollingFromOutside.current) return;
+
+			const scrollHeight = scroller.scrollHeight - scroller.clientHeight;
+			const ratio = scrollHeight > 0 ? scroller.scrollTop / scrollHeight : 0;
+			onScroll(ratio);
+		};
+
+		scroller.addEventListener("scroll", handleScroll, { passive: true });
+		return () => scroller.removeEventListener("scroll", handleScroll);
+	}, [onScroll]);
 
 	// Sync external content changes
 	useEffect(() => {

@@ -1,10 +1,11 @@
 import type { Signal } from "@preact/signals";
 import type { Extension } from "@codemirror/state";
 import { useRef, useState } from "preact/hooks";
-import { Editor } from "./Editor";
+import { Editor, type EditorRef } from "./Editor";
 import type { ParseError } from "../lib/yyjj-wrapper";
 import type { FileType } from "../utils/fileUtils";
 import { getFileType } from "../utils/fileUtils";
+import { scrollSyncEnabled } from "../state/store";
 
 interface EditorPaneProps {
 	title: string;
@@ -16,6 +17,10 @@ interface EditorPaneProps {
 	filename: Signal<string | null>;
 	onImport: (file: File) => Promise<void>;
 	onDownload: () => void;
+	onScroll?: (ratio: number) => void;
+	editorRef?: { current: EditorRef | null };
+	showSyncToggle?: boolean;
+	onToggleSync?: () => void;
 }
 
 export function EditorPane({
@@ -28,6 +33,10 @@ export function EditorPane({
 	filename,
 	onImport,
 	onDownload,
+	onScroll,
+	editorRef,
+	showSyncToggle = false,
+	onToggleSync,
 }: EditorPaneProps) {
 	const errorValue = error.value;
 	const fileInputRef = useRef<HTMLInputElement>(null);
@@ -96,6 +105,18 @@ export function EditorPane({
 					{errorValue && <span class="editor-error-badge">Error</span>}
 				</div>
 				<div class="editor-header-right">
+					{showSyncToggle && onToggleSync && (
+						<button
+							type="button"
+							class={`editor-button sync-toggle ${
+								scrollSyncEnabled.value ? "active" : ""
+							}`}
+							onClick={onToggleSync}
+							aria-label="Toggle scroll sync"
+						>
+							Sync: {scrollSyncEnabled.value ? "ON" : "OFF"}
+						</button>
+					)}
 					<button
 						type="button"
 						class="editor-button editor-button-import"
@@ -125,6 +146,8 @@ export function EditorPane({
 				content={content}
 				extensions={extensions}
 				onChange={onChange}
+				onScroll={onScroll}
+				editorRef={editorRef}
 				placeholder={`Enter ${title} here...`}
 			/>
 			{errorValue && (

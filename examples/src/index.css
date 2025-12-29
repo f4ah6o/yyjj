@@ -178,6 +178,25 @@ body {
   transform: translateY(1px);
 }
 
+.sync-toggle {
+  border-color: var(--accent-color);
+  color: var(--accent-color);
+}
+
+.sync-toggle:hover {
+  background: rgba(233, 69, 96, 0.1);
+}
+
+.sync-toggle.active {
+  background: var(--accent-color);
+  color: white;
+}
+
+.sync-toggle.active:hover {
+  background: var(--accent-color);
+  opacity: 0.9;
+}
+
 .hidden-file-input {
   display: none;
 }

@@ -28,3 +28,6 @@ export const yamlError = signal<ParseError | null>(null);
 // Filename states
 export const jsoncFilename = signal<string | null>(null);
 export const yamlFilename = signal<string | null>(null);
+
+// Scroll sync state
+export const scrollSyncEnabled = signal<boolean>(true);

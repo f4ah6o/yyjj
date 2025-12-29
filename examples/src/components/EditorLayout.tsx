@@ -1,6 +1,8 @@
+import { useRef } from "preact/hooks";
 import { json } from "@codemirror/lang-json";
 import { yaml } from "@codemirror/lang-yaml";
 import { EditorPane } from "./EditorPane";
+import type { EditorRef } from "./Editor";
 import {
 	jsoncContent,
 	yamlContent,
@@ -9,6 +11,7 @@ import {
 	editSource,
 	jsoncFilename,
 	yamlFilename,
+	scrollSyncEnabled,
 } from "../state/store";
 import { jsoncToYaml, yamlToJsonc } from "../lib/yyjj-wrapper";
 import {
@@ -123,6 +126,32 @@ function handleYamlDownload(): void {
 }
 
 export function EditorLayout() {
+	const jsoncEditorRef = useRef<EditorRef | null>(null);
+	const yamlEditorRef = useRef<EditorRef | null>(null);
+	const isScrolling = useRef(false);
+
+	const handleJsoncScroll = (ratio: number) => {
+		if (!scrollSyncEnabled.value || isScrolling.current) return;
+		isScrolling.current = true;
+		yamlEditorRef.current?.scrollTo(ratio);
+		requestAnimationFrame(() => {
+			isScrolling.current = false;
+		});
+	};
+
+	const handleYamlScroll = (ratio: number) => {
+		if (!scrollSyncEnabled.value || isScrolling.current) return;
+		isScrolling.current = true;
+		jsoncEditorRef.current?.scrollTo(ratio);
+		requestAnimationFrame(() => {
+			isScrolling.current = false;
+		});
+	};
+
+	const toggleScrollSync = () => {
+		scrollSyncEnabled.value = !scrollSyncEnabled.value;
+	};
+
 	return (
 		<div class="editor-layout">
 			<EditorPane
@@ -135,6 +164,10 @@ export function EditorLayout() {
 				filename={jsoncFilename}
 				onImport={handleJsoncImport}
 				onDownload={handleJsoncDownload}
+				onScroll={handleJsoncScroll}
+				editorRef={jsoncEditorRef}
+				showSyncToggle={true}
+				onToggleSync={toggleScrollSync}
 			/>
 			<EditorPane
 				title="YAML"
@@ -146,6 +179,8 @@ export function EditorLayout() {
 				filename={yamlFilename}
 				onImport={handleYamlImport}
 				onDownload={handleYamlDownload}
+				onScroll={handleYamlScroll}
+				editorRef={yamlEditorRef}
 			/>
 		</div>
 	);
