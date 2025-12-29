@@ -14,6 +14,8 @@ import {
 	scrollSyncEnabled,
 	jsoncToYamlMappings,
 	yamlToJsoncMappings,
+	jsoncConverting,
+	yamlConverting,
 } from "../state/store";
 import {
 	jsoncToYaml,
@@ -34,7 +36,7 @@ const DEBOUNCE_MS = 300;
 let jsoncTimeout: ReturnType<typeof setTimeout> | null = null;
 let yamlTimeout: ReturnType<typeof setTimeout> | null = null;
 
-function handleJsoncChange(
+async function handleJsoncChange(
 	value: string,
 	cursor?: CursorPosition,
 	yamlEditorRef?: { current: EditorRef | null }
@@ -42,40 +44,52 @@ function handleJsoncChange(
 	jsoncContent.value = value;
 
 	if (jsoncTimeout) clearTimeout(jsoncTimeout);
-	jsoncTimeout = setTimeout(() => {
+	jsoncTimeout = setTimeout(async () => {
 		// Skip if this update was triggered by YAML conversion
 		if (editSource.value === "yaml") {
 			editSource.value = null;
 			return;
 		}
 
-		const result = jsoncToYamlWithMapping(value);
-		if (result.tag === "Ok") {
-			jsoncError.value = null;
-			editSource.value = "jsonc";
-			yamlContent.value = result.val.output;
-			jsoncToYamlMappings.value = result.val.mappings;
+		jsoncConverting.value = true;
+		try {
+			const result = await jsoncToYamlWithMapping(value);
+			if (result.tag === "Ok") {
+				jsoncError.value = null;
+				editSource.value = "jsonc";
+				yamlContent.value = result.val.output;
+				jsoncToYamlMappings.value = result.val.mappings;
 
-			// Sync cursor position if available
-			if (cursor && yamlEditorRef?.current) {
-				const targetPos = lookupTargetPosition(
-					result.val.mappings,
-					cursor.line,
-					cursor.column,
-					cursor.offset
-				);
-				if (targetPos) {
-					yamlEditorRef.current.setCursorPosition(targetPos);
+				// Sync cursor position if available
+				if (cursor && yamlEditorRef?.current) {
+					const targetPos = await lookupTargetPosition(
+						result.val.mappings,
+						cursor.line,
+						cursor.column,
+						cursor.offset
+					);
+					if (targetPos) {
+						yamlEditorRef.current.setCursorPosition(targetPos);
+					}
 				}
+			} else {
+				jsoncError.value = result.val;
+				jsoncToYamlMappings.value = [];
 			}
-		} else {
-			jsoncError.value = result.val;
+		} catch (error) {
+			jsoncError.value = {
+				message: error instanceof Error ? error.message : String(error),
+				kind: "RuntimeError",
+				span: { start: { line: 0, column: 0, offset: 0 }, end: { line: 0, column: 0, offset: 0 } },
+			};
 			jsoncToYamlMappings.value = [];
+		} finally {
+			jsoncConverting.value = false;
 		}
 	}, DEBOUNCE_MS);
 }
 
-function handleYamlChange(
+async function handleYamlChange(
 	value: string,
 	cursor?: CursorPosition,
 	jsoncEditorRef?: { current: EditorRef | null }
@@ -83,46 +97,58 @@ function handleYamlChange(
 	yamlContent.value = value;
 
 	if (yamlTimeout) clearTimeout(yamlTimeout);
-	yamlTimeout = setTimeout(() => {
+	yamlTimeout = setTimeout(async () => {
 		// Skip if this update was triggered by JSONC conversion
 		if (editSource.value === "jsonc") {
 			editSource.value = null;
 			return;
 		}
 
-		const result = yamlToJsoncWithMapping(value);
-		if (result.tag === "Ok") {
-			yamlError.value = null;
-			editSource.value = "yaml";
-			jsoncContent.value = result.val.output;
-			yamlToJsoncMappings.value = result.val.mappings;
+		yamlConverting.value = true;
+		try {
+			const result = await yamlToJsoncWithMapping(value);
+			if (result.tag === "Ok") {
+				yamlError.value = null;
+				editSource.value = "yaml";
+				jsoncContent.value = result.val.output;
+				yamlToJsoncMappings.value = result.val.mappings;
 
-			// Sync cursor position if available
-			if (cursor && jsoncEditorRef?.current) {
-				const targetPos = lookupSourcePosition(
-					result.val.mappings,
-					cursor.line,
-					cursor.column,
-					cursor.offset
-				);
-				if (targetPos) {
-					jsoncEditorRef.current.setCursorPosition(targetPos);
+				// Sync cursor position if available
+				if (cursor && jsoncEditorRef?.current) {
+					const targetPos = await lookupSourcePosition(
+						result.val.mappings,
+						cursor.line,
+						cursor.column,
+						cursor.offset
+					);
+					if (targetPos) {
+						jsoncEditorRef.current.setCursorPosition(targetPos);
+					}
 				}
+			} else {
+				yamlError.value = result.val;
+				yamlToJsoncMappings.value = [];
 			}
-		} else {
-			yamlError.value = result.val;
+		} catch (error) {
+			yamlError.value = {
+				message: error instanceof Error ? error.message : String(error),
+				kind: "RuntimeError",
+				span: { start: { line: 0, column: 0, offset: 0 }, end: { line: 0, column: 0, offset: 0 } },
+			};
 			yamlToJsoncMappings.value = [];
+		} finally {
+			yamlConverting.value = false;
 		}
 	}, DEBOUNCE_MS);
 }
 
-function handleJsoncCursorChange(
+async function handleJsoncCursorChange(
 	cursor: CursorPosition,
 	yamlEditorRef?: { current: EditorRef | null }
 ) {
 	// Use the stored mappings to sync cursor position
 	if (yamlEditorRef?.current && jsoncToYamlMappings.value.length > 0) {
-		const targetPos = lookupTargetPosition(
+		const targetPos = await lookupTargetPosition(
 			jsoncToYamlMappings.value,
 			cursor.line,
 			cursor.column,
@@ -134,13 +160,13 @@ function handleJsoncCursorChange(
 	}
 }
 
-function handleYamlCursorChange(
+async function handleYamlCursorChange(
 	cursor: CursorPosition,
 	jsoncEditorRef?: { current: EditorRef | null }
 ) {
 	// Use the stored mappings to sync cursor position
 	if (jsoncEditorRef?.current && yamlToJsoncMappings.value.length > 0) {
-		const targetPos = lookupSourcePosition(
+		const targetPos = await lookupSourcePosition(
 			yamlToJsoncMappings.value,
 			cursor.line,
 			cursor.column,
@@ -158,26 +184,39 @@ async function handleJsoncImport(file: File): Promise<void> {
 		jsoncContent.value = text;
 		jsoncFilename.value = file.name;
 
-		const result = jsoncToYaml(text);
-		if (result.tag === "Ok") {
-			jsoncError.value = null;
-			editSource.value = "jsonc";
-			yamlContent.value = result.val;
-			yamlFilename.value = null;
+		jsoncConverting.value = true;
+		try {
+			const result = await jsoncToYaml(text);
+			if (result.tag === "Ok") {
+				jsoncError.value = null;
+				editSource.value = "jsonc";
+				yamlContent.value = result.val;
+				yamlFilename.value = null;
 
-			// Update mappings
-			const mappingResult = jsoncToYamlWithMapping(text);
-			if (mappingResult.tag === "Ok") {
-				jsoncToYamlMappings.value = mappingResult.val.mappings;
+				// Update mappings
+				const mappingResult = await jsoncToYamlWithMapping(text);
+				if (mappingResult.tag === "Ok") {
+					jsoncToYamlMappings.value = mappingResult.val.mappings;
+				}
+			} else {
+				jsoncError.value = result.val;
+				jsoncToYamlMappings.value = [];
 			}
-		} else {
-			jsoncError.value = result.val;
+		} catch (error) {
+			jsoncError.value = {
+				message: error instanceof Error ? error.message : String(error),
+				kind: "RuntimeError",
+				span: { start: { line: 0, column: 0, offset: 0 }, end: { line: 0, column: 0, offset: 0 } },
+			};
 			jsoncToYamlMappings.value = [];
+		} finally {
+			jsoncConverting.value = false;
 		}
 	} catch {
 		jsoncError.value = {
 			message: "Failed to read file",
-			span: { start: { line: 0, column: 0 }, end: { line: 0, column: 0 } },
+			kind: "RuntimeError",
+			span: { start: { line: 0, column: 0, offset: 0 }, end: { line: 0, column: 0, offset: 0 } },
 		};
 	}
 }
@@ -188,26 +227,39 @@ async function handleYamlImport(file: File): Promise<void> {
 		yamlContent.value = text;
 		yamlFilename.value = file.name;
 
-		const result = yamlToJsonc(text);
-		if (result.tag === "Ok") {
-			yamlError.value = null;
-			editSource.value = "yaml";
-			jsoncContent.value = result.val;
-			jsoncFilename.value = null;
+		yamlConverting.value = true;
+		try {
+			const result = await yamlToJsonc(text);
+			if (result.tag === "Ok") {
+				yamlError.value = null;
+				editSource.value = "yaml";
+				jsoncContent.value = result.val;
+				jsoncFilename.value = null;
 
-			// Update mappings
-			const mappingResult = yamlToJsoncWithMapping(text);
-			if (mappingResult.tag === "Ok") {
-				yamlToJsoncMappings.value = mappingResult.val.mappings;
+				// Update mappings
+				const mappingResult = await yamlToJsoncWithMapping(text);
+				if (mappingResult.tag === "Ok") {
+					yamlToJsoncMappings.value = mappingResult.val.mappings;
+				}
+			} else {
+				yamlError.value = result.val;
+				yamlToJsoncMappings.value = [];
 			}
-		} else {
-			yamlError.value = result.val;
+		} catch (error) {
+			yamlError.value = {
+				message: error instanceof Error ? error.message : String(error),
+				kind: "RuntimeError",
+				span: { start: { line: 0, column: 0, offset: 0 }, end: { line: 0, column: 0, offset: 0 } },
+			};
 			yamlToJsoncMappings.value = [];
+		} finally {
+			yamlConverting.value = false;
 		}
 	} catch {
 		yamlError.value = {
 			message: "Failed to read file",
-			span: { start: { line: 0, column: 0 }, end: { line: 0, column: 0 } },
+			kind: "RuntimeError",
+			span: { start: { line: 0, column: 0, offset: 0 }, end: { line: 0, column: 0, offset: 0 } },
 		};
 	}
 }
@@ -282,6 +334,7 @@ export function EditorLayout() {
 				showSyncToggle={true}
 				onToggleSync={toggleScrollSync}
 				onCursorChange={wrapJsoncCursorChange}
+				converting={jsoncConverting}
 			/>
 			<EditorPane
 				title="YAML"
@@ -296,6 +349,7 @@ export function EditorLayout() {
 				onScroll={handleYamlScroll}
 				editorRef={yamlEditorRef}
 				onCursorChange={wrapYamlCursorChange}
+				converting={yamlConverting}
 			/>
 		</div>
 	);

@@ -35,3 +35,7 @@ export const scrollSyncEnabled = signal<boolean>(true);
 // Position mapping states for cursor sync
 export const jsoncToYamlMappings = signal<SourceMapping[]>([]);
 export const yamlToJsoncMappings = signal<SourceMapping[]>([]);
+
+// Loading states for async conversion
+export const jsoncConverting = signal<boolean>(false);
+export const yamlConverting = signal<boolean>(false);

@@ -1,148 +1,103 @@
-import {
-	jsonc_to_yaml,
-	yaml_to_jsonc,
-	jsonc_to_yaml_with_mapping,
-	yaml_to_jsonc_with_mapping,
-} from "yyjj";
-import {
-	SourceMapping as YYSourceMapping,
-	ConversionResult as YYConversionResult,
-	lookup_target_position,
-	lookup_source_position,
-} from "yyjj/common";
+// Re-export all types from yyjj-client
+export type {
+	ParseError,
+	Position,
+	SourceMapping,
+	ConversionResult,
+	ConversionResultWithMapping,
+	ConversionResultMapping,
+} from "./yyjj-client.ts";
 
-export interface ParseError {
-	kind: unknown;
-	span: {
-		start: { line: number; column: number; offset: number };
-		end: { line: number; column: number; offset: number };
-	};
-	message: string;
+import { yyjjClient } from "./yyjj-client.ts";
+
+/**
+ * Convert JSONC to YAML.
+ * @param input - JSONC string
+ * @param width - Optional line width for formatting
+ * @returns Promise resolving to conversion result
+ */
+export async function jsoncToYaml(
+	input: string,
+	width?: number
+): Promise<ConversionResult> {
+	return yyjjClient.jsoncToYaml(input, width);
 }
 
-export type ConversionResult =
-	| { tag: "Ok"; val: string }
-	| { tag: "Err"; val: ParseError };
-
-// MoonBit Result type: { $tag: 1, _0: T } (Ok) or { $tag: 0, _0: E } (Err)
-function normalizeResult(result: unknown): ConversionResult {
-	const r = result as { $tag: number; _0: unknown };
-	if (r.$tag === 1) {
-		return { tag: "Ok", val: r._0 as string };
-	}
-	return { tag: "Err", val: r._0 as ParseError };
+/**
+ * Convert YAML to JSONC.
+ * @param input - YAML string
+ * @param width - Optional line width for formatting
+ * @returns Promise resolving to conversion result
+ */
+export async function yamlToJsonc(
+	input: string,
+	width?: number
+): Promise<ConversionResult> {
+	return yyjjClient.yamlToJsonc(input, width);
 }
 
-export function jsoncToYaml(input: string, width?: number): ConversionResult {
-	const result = jsonc_to_yaml(input, width);
-	return normalizeResult(result);
-}
-
-export function yamlToJsonc(input: string, width?: number): ConversionResult {
-	const result = yaml_to_jsonc(input, width);
-	return normalizeResult(result);
-}
-
-// Position types
-export interface Position {
-	line: number;
-	column: number;
-	offset: number;
-}
-
-export interface SourceMapping {
-	sourceStart: Position;
-	sourceEnd: Position;
-	targetStart: Position;
-	targetEnd: Position;
-}
-
-export interface ConversionResultWithMapping {
-	output: string;
-	mappings: SourceMapping[];
-}
-
-export type ConversionResultMapping =
-	| { tag: "Ok"; val: ConversionResultWithMapping }
-	| { tag: "Err"; val: ParseError };
-
-function normalizeConversionResult(
-	result: unknown
-): ConversionResultMapping {
-	const r = result as { $tag: number; _0: unknown };
-	if (r.$tag === 1) {
-		const yyResult = r._0 as YYConversionResult;
-		return {
-			tag: "Ok",
-			val: {
-				output: yyResult.output,
-				mappings: yyResult.mappings.map(toSourceMapping),
-			},
-		};
-	}
-	return { tag: "Err", val: r._0 as ParseError };
-}
-
-function toSourceMapping(yy: YYSourceMapping): SourceMapping {
-	return {
-		sourceStart: yy.source_start,
-		sourceEnd: yy.source_end,
-		targetStart: yy.target_start,
-		targetEnd: yy.target_end,
-	};
-}
-
-export function jsoncToYamlWithMapping(
+/**
+ * Convert JSONC to YAML with source mapping.
+ * @param input - JSONC string
+ * @returns Promise resolving to conversion result with mappings
+ */
+export async function jsoncToYamlWithMapping(
 	input: string
-): ConversionResultMapping {
-	const result = jsonc_to_yaml_with_mapping(input);
-	return normalizeConversionResult(result);
+): Promise<ConversionResultMapping> {
+	return yyjjClient.jsoncToYamlWithMapping(input);
 }
 
-export function yamlToJsoncWithMapping(
+/**
+ * Convert YAML to JSONC with source mapping.
+ * @param input - YAML string
+ * @returns Promise resolving to conversion result with mappings
+ */
+export async function yamlToJsoncWithMapping(
 	input: string
-): ConversionResultMapping {
-	const result = yaml_to_jsonc_with_mapping(input);
-	return normalizeConversionResult(result);
+): Promise<ConversionResultMapping> {
+	return yyjjClient.yamlToJsoncWithMapping(input);
 }
 
-export function lookupTargetPosition(
+/**
+ * Look up target position from source position using mappings.
+ * @param mappings - Source mappings
+ * @param sourceLine - Source line number (0-indexed)
+ * @param sourceColumn - Source column number (0-indexed)
+ * @param sourceOffset - Source character offset
+ * @returns Promise resolving to target position or null
+ */
+export async function lookupTargetPosition(
 	mappings: SourceMapping[],
 	sourceLine: number,
 	sourceColumn: number,
 	sourceOffset: number
-): Position | null {
-	const result = lookup_target_position(
-		mappings.map(toYYSourceMapping),
+): Promise<Position | null> {
+	return yyjjClient.lookupTargetPosition(
+		mappings,
 		sourceLine,
 		sourceColumn,
 		sourceOffset
 	);
-	if (result === null || result === undefined) return null;
-	return result as Position;
 }
 
-export function lookupSourcePosition(
+/**
+ * Look up source position from target position using mappings.
+ * @param mappings - Source mappings
+ * @param targetLine - Target line number (0-indexed)
+ * @param targetColumn - Target column number (0-indexed)
+ * @param targetOffset - Target character offset
+ * @returns Promise resolving to source position or null
+ */
+export async function lookupSourcePosition(
 	mappings: SourceMapping[],
 	targetLine: number,
 	targetColumn: number,
 	targetOffset: number
-): Position | null {
-	const result = lookup_source_position(
-		mappings.map(toYYSourceMapping),
+): Promise<Position | null> {
+	return yyjjClient.lookupSourcePosition(
+		mappings,
 		targetLine,
 		targetColumn,
 		targetOffset
 	);
-	if (result === null || result === undefined) return null;
-	return result as Position;
-}
-
-function toYYSourceMapping(mapping: SourceMapping): YYSourceMapping {
-	return {
-		source_start: mapping.sourceStart,
-		source_end: mapping.sourceEnd,
-		target_start: mapping.targetStart,
-		target_end: mapping.targetEnd,
-	};
 }

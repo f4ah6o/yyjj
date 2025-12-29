@@ -16,6 +16,9 @@ export default defineConfig({
 		outDir: "dist",
 		sourcemap: true,
 	},
+	worker: {
+		format: "es",
+	},
 	define: {
 		__YYJJ_VERSION__: JSON.stringify(getVersion()),
 	},

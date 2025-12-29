@@ -22,6 +22,7 @@ interface EditorPaneProps {
 	showSyncToggle?: boolean;
 	onToggleSync?: () => void;
 	onCursorChange?: (cursor: CursorPosition) => void;
+	converting?: Signal<boolean>;
 }
 
 export function EditorPane({
@@ -39,8 +40,10 @@ export function EditorPane({
 	showSyncToggle = false,
 	onToggleSync,
 	onCursorChange,
+	converting,
 }: EditorPaneProps) {
 	const errorValue = error.value;
+	const convertingValue = converting?.value ?? false;
 	const fileInputRef = useRef<HTMLInputElement>(null);
 	const [isDraggingOver, setIsDraggingOver] = useState(false);
 
@@ -102,6 +105,11 @@ export function EditorPane({
 					{filename.value && (
 						<span class="editor-filename" title={filename.value}>
 							{filename.value}
+						</span>
+					)}
+					{convertingValue && (
+						<span class="editor-converting-badge" title="Converting...">
+							 Converting...
 						</span>
 					)}
 					{errorValue && <span class="editor-error-badge">Error</span>}
