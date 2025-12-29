@@ -16,7 +16,10 @@
         "print_jsonc",
         "print_yaml",
         "transform_jsonc_to_yaml",
-        "transform_yaml_to_jsonc"
+        "transform_yaml_to_jsonc",
+        "jsonc_to_yaml_with_mapping",
+        "yaml_to_jsonc_with_mapping",
+        "create_comment_based_mappings"
       ],
       "use-js-builtin-string": true,
       "format": "esm"

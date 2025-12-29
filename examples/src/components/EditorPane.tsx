@@ -1,7 +1,7 @@
 import type { Signal } from "@preact/signals";
 import type { Extension } from "@codemirror/state";
 import { useRef, useState } from "preact/hooks";
-import { Editor, type EditorRef } from "./Editor";
+import { Editor, type EditorRef, type CursorPosition } from "./Editor";
 import type { ParseError } from "../lib/yyjj-wrapper";
 import type { FileType } from "../utils/fileUtils";
 import { getFileType } from "../utils/fileUtils";
@@ -12,7 +12,7 @@ interface EditorPaneProps {
 	content: Signal<string>;
 	error: Signal<ParseError | null>;
 	extensions: Extension[];
-	onChange: (value: string) => void;
+	onChange: (value: string, cursor?: CursorPosition) => void;
 	paneType: FileType;
 	filename: Signal<string | null>;
 	onImport: (file: File) => Promise<void>;
@@ -21,6 +21,7 @@ interface EditorPaneProps {
 	editorRef?: { current: EditorRef | null };
 	showSyncToggle?: boolean;
 	onToggleSync?: () => void;
+	onCursorChange?: (cursor: CursorPosition) => void;
 }
 
 export function EditorPane({
@@ -37,6 +38,7 @@ export function EditorPane({
 	editorRef,
 	showSyncToggle = false,
 	onToggleSync,
+	onCursorChange,
 }: EditorPaneProps) {
 	const errorValue = error.value;
 	const fileInputRef = useRef<HTMLInputElement>(null);
@@ -148,6 +150,7 @@ export function EditorPane({
 				onChange={onChange}
 				onScroll={onScroll}
 				editorRef={editorRef}
+				onCursorChange={onCursorChange}
 				placeholder={`Enter ${title} here...`}
 			/>
 			{errorValue && (

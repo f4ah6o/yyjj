@@ -2,7 +2,7 @@ import { useRef } from "preact/hooks";
 import { json } from "@codemirror/lang-json";
 import { yaml } from "@codemirror/lang-yaml";
 import { EditorPane } from "./EditorPane";
-import type { EditorRef } from "./Editor";
+import type { EditorRef, CursorPosition } from "./Editor";
 import {
 	jsoncContent,
 	yamlContent,
@@ -12,8 +12,17 @@ import {
 	jsoncFilename,
 	yamlFilename,
 	scrollSyncEnabled,
+	jsoncToYamlMappings,
+	yamlToJsoncMappings,
 } from "../state/store";
-import { jsoncToYaml, yamlToJsonc } from "../lib/yyjj-wrapper";
+import {
+	jsoncToYaml,
+	yamlToJsonc,
+	jsoncToYamlWithMapping,
+	yamlToJsoncWithMapping,
+	lookupTargetPosition,
+	lookupSourcePosition,
+} from "../lib/yyjj-wrapper";
 import {
 	readFileAsText,
 	downloadFile,
@@ -25,7 +34,11 @@ const DEBOUNCE_MS = 300;
 let jsoncTimeout: ReturnType<typeof setTimeout> | null = null;
 let yamlTimeout: ReturnType<typeof setTimeout> | null = null;
 
-function handleJsoncChange(value: string) {
+function handleJsoncChange(
+	value: string,
+	cursor?: CursorPosition,
+	yamlEditorRef?: { current: EditorRef | null }
+) {
 	jsoncContent.value = value;
 
 	if (jsoncTimeout) clearTimeout(jsoncTimeout);
@@ -36,18 +49,37 @@ function handleJsoncChange(value: string) {
 			return;
 		}
 
-		const result = jsoncToYaml(value);
+		const result = jsoncToYamlWithMapping(value);
 		if (result.tag === "Ok") {
 			jsoncError.value = null;
 			editSource.value = "jsonc";
-			yamlContent.value = result.val;
+			yamlContent.value = result.val.output;
+			jsoncToYamlMappings.value = result.val.mappings;
+
+			// Sync cursor position if available
+			if (cursor && yamlEditorRef?.current) {
+				const targetPos = lookupTargetPosition(
+					result.val.mappings,
+					cursor.line,
+					cursor.column,
+					cursor.offset
+				);
+				if (targetPos) {
+					yamlEditorRef.current.setCursorPosition(targetPos);
+				}
+			}
 		} else {
 			jsoncError.value = result.val;
+			jsoncToYamlMappings.value = [];
 		}
 	}, DEBOUNCE_MS);
 }
 
-function handleYamlChange(value: string) {
+function handleYamlChange(
+	value: string,
+	cursor?: CursorPosition,
+	jsoncEditorRef?: { current: EditorRef | null }
+) {
 	yamlContent.value = value;
 
 	if (yamlTimeout) clearTimeout(yamlTimeout);
@@ -58,15 +90,66 @@ function handleYamlChange(value: string) {
 			return;
 		}
 
-		const result = yamlToJsonc(value);
+		const result = yamlToJsoncWithMapping(value);
 		if (result.tag === "Ok") {
 			yamlError.value = null;
 			editSource.value = "yaml";
-			jsoncContent.value = result.val;
+			jsoncContent.value = result.val.output;
+			yamlToJsoncMappings.value = result.val.mappings;
+
+			// Sync cursor position if available
+			if (cursor && jsoncEditorRef?.current) {
+				const targetPos = lookupSourcePosition(
+					result.val.mappings,
+					cursor.line,
+					cursor.column,
+					cursor.offset
+				);
+				if (targetPos) {
+					jsoncEditorRef.current.setCursorPosition(targetPos);
+				}
+			}
 		} else {
 			yamlError.value = result.val;
+			yamlToJsoncMappings.value = [];
 		}
 	}, DEBOUNCE_MS);
+}
+
+function handleJsoncCursorChange(
+	cursor: CursorPosition,
+	yamlEditorRef?: { current: EditorRef | null }
+) {
+	// Use the stored mappings to sync cursor position
+	if (yamlEditorRef?.current && jsoncToYamlMappings.value.length > 0) {
+		const targetPos = lookupTargetPosition(
+			jsoncToYamlMappings.value,
+			cursor.line,
+			cursor.column,
+			cursor.offset
+		);
+		if (targetPos) {
+			yamlEditorRef.current.setCursorPosition(targetPos);
+		}
+	}
+}
+
+function handleYamlCursorChange(
+	cursor: CursorPosition,
+	jsoncEditorRef?: { current: EditorRef | null }
+) {
+	// Use the stored mappings to sync cursor position
+	if (jsoncEditorRef?.current && yamlToJsoncMappings.value.length > 0) {
+		const targetPos = lookupSourcePosition(
+			yamlToJsoncMappings.value,
+			cursor.line,
+			cursor.column,
+			cursor.offset
+		);
+		if (targetPos) {
+			jsoncEditorRef.current.setCursorPosition(targetPos);
+		}
+	}
 }
 
 async function handleJsoncImport(file: File): Promise<void> {
@@ -81,8 +164,15 @@ async function handleJsoncImport(file: File): Promise<void> {
 			editSource.value = "jsonc";
 			yamlContent.value = result.val;
 			yamlFilename.value = null;
+
+			// Update mappings
+			const mappingResult = jsoncToYamlWithMapping(text);
+			if (mappingResult.tag === "Ok") {
+				jsoncToYamlMappings.value = mappingResult.val.mappings;
+			}
 		} else {
 			jsoncError.value = result.val;
+			jsoncToYamlMappings.value = [];
 		}
 	} catch {
 		jsoncError.value = {
@@ -104,8 +194,15 @@ async function handleYamlImport(file: File): Promise<void> {
 			editSource.value = "yaml";
 			jsoncContent.value = result.val;
 			jsoncFilename.value = null;
+
+			// Update mappings
+			const mappingResult = yamlToJsoncWithMapping(text);
+			if (mappingResult.tag === "Ok") {
+				yamlToJsoncMappings.value = mappingResult.val.mappings;
+			}
 		} else {
 			yamlError.value = result.val;
+			yamlToJsoncMappings.value = [];
 		}
 	} catch {
 		yamlError.value = {
@@ -152,6 +249,22 @@ export function EditorLayout() {
 		scrollSyncEnabled.value = !scrollSyncEnabled.value;
 	};
 
+	const wrapJsoncChange = (value: string, cursor?: CursorPosition) => {
+		handleJsoncChange(value, cursor, yamlEditorRef);
+	};
+
+	const wrapYamlChange = (value: string, cursor?: CursorPosition) => {
+		handleYamlChange(value, cursor, jsoncEditorRef);
+	};
+
+	const wrapJsoncCursorChange = (cursor: CursorPosition) => {
+		handleJsoncCursorChange(cursor, yamlEditorRef);
+	};
+
+	const wrapYamlCursorChange = (cursor: CursorPosition) => {
+		handleYamlCursorChange(cursor, jsoncEditorRef);
+	};
+
 	return (
 		<div class="editor-layout">
 			<EditorPane
@@ -159,7 +272,7 @@ export function EditorLayout() {
 				content={jsoncContent}
 				error={jsoncError}
 				extensions={[json()]}
-				onChange={handleJsoncChange}
+				onChange={wrapJsoncChange}
 				paneType="jsonc"
 				filename={jsoncFilename}
 				onImport={handleJsoncImport}
@@ -168,19 +281,21 @@ export function EditorLayout() {
 				editorRef={jsoncEditorRef}
 				showSyncToggle={true}
 				onToggleSync={toggleScrollSync}
+				onCursorChange={wrapJsoncCursorChange}
 			/>
 			<EditorPane
 				title="YAML"
 				content={yamlContent}
 				error={yamlError}
 				extensions={[yaml()]}
-				onChange={handleYamlChange}
+				onChange={wrapYamlChange}
 				paneType="yaml"
 				filename={yamlFilename}
 				onImport={handleYamlImport}
 				onDownload={handleYamlDownload}
 				onScroll={handleYamlScroll}
 				editorRef={yamlEditorRef}
+				onCursorChange={wrapYamlCursorChange}
 			/>
 		</div>
 	);

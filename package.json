@@ -24,6 +24,11 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs",
       "require": "./dist/index.cjs"
+    },
+    "./common": {
+      "types": "./dist/common.d.ts",
+      "import": "./dist/common.mjs",
+      "require": "./dist/common.cjs"
     }
   },
   "files": [
@@ -35,7 +40,7 @@
     "clean": "rm -rf target dist",
     "build:moon": "moon build --target js",
     "build:bundle": "rolldown -c rolldown.config.mjs",
-    "build:types": "moon build --target js && mkdir -p dist && cp target/js/release/build/yyjj.d.ts dist/index.d.ts",
+    "build:types": "moon build --target js && mkdir -p dist && cp target/js/release/build/yyjj.d.ts dist/index.d.ts && cp target/js/release/build/common/common.d.ts dist/common.d.ts",
     "build": "pnpm run clean && pnpm run build:moon && pnpm run build:bundle && pnpm run build:types",
     "prepublishOnly": "pnpm run build",
     "dev": "vite",

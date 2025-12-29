@@ -1,5 +1,5 @@
 import { signal } from "@preact/signals";
-import type { ParseError } from "../lib/yyjj-wrapper";
+import type { ParseError, SourceMapping } from "../lib/yyjj-wrapper";
 
 export type EditSource = "jsonc" | "yaml" | null;
 
@@ -31,3 +31,7 @@ export const yamlFilename = signal<string | null>(null);
 
 // Scroll sync state
 export const scrollSyncEnabled = signal<boolean>(true);
+
+// Position mapping states for cursor sync
+export const jsoncToYamlMappings = signal<SourceMapping[]>([]);
+export const yamlToJsoncMappings = signal<SourceMapping[]>([]);

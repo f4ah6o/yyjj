@@ -63,3 +63,32 @@ pub fn transform_jsonc_to_yaml(node : @jsonc.JsonNode) -> @yaml.YamlNode {
 pub fn transform_yaml_to_jsonc(node : @yaml.YamlNode) -> @jsonc.JsonNode {
   @transform.yaml_to_jsonc(node)
 }
+
+///|
+/// Convert JSONC to YAML with position mapping
+/// Returns ConversionResult containing output and source mappings
+pub fn jsonc_to_yaml_with_mapping(
+  input : String
+) -> Result[@common.ConversionResult, @common.ParseError] {
+  @transform.jsonc_to_yaml_with_mapping(input)
+}
+
+///|
+/// Convert YAML to JSONC with position mapping
+/// Returns ConversionResult containing output and source mappings
+pub fn yaml_to_jsonc_with_mapping(
+  input : String
+) -> Result[@common.ConversionResult, @common.ParseError] {
+  @transform.yaml_to_jsonc_with_mapping(input)
+}
+
+///|
+/// Create position mappings based on comment anchors
+/// This is a simplified approach that uses comment positions as reference points
+pub fn create_comment_based_mappings(
+  input : String,
+  output : String,
+  is_jsonc_input : Bool
+) -> Array[@common.SourceMapping] {
+  @transform.create_comment_based_mappings(input, output, is_jsonc_input)
+}

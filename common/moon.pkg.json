@@ -1,2 +1,12 @@
 {
+  "link": {
+    "js": {
+      "exports": [
+        "SourceMapping",
+        "ConversionResult",
+        "lookup_target_position",
+        "lookup_source_position"
+      ]
+    }
+  }
 }

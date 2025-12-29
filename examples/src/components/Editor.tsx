@@ -4,17 +4,26 @@ import { EditorState, type Extension } from "@codemirror/state";
 import { basicSetup } from "codemirror";
 import type { Signal } from "@preact/signals";
 
+export interface CursorPosition {
+	line: number;
+	column: number;
+	offset: number;
+}
+
 export interface EditorRef {
 	scrollTo(ratio: number): void;
+	getCursorPosition(): CursorPosition;
+	setCursorPosition(position: CursorPosition): void;
 }
 
 interface EditorProps {
 	content: Signal<string>;
 	extensions: Extension[];
 	placeholder?: string;
-	onChange: (value: string) => void;
+	onChange: (value: string, cursor?: CursorPosition) => void;
 	onScroll?: (ratio: number) => void;
 	editorRef?: { current: EditorRef | null };
+	onCursorChange?: (cursor: CursorPosition) => void;
 }
 
 export function Editor({
@@ -24,6 +33,7 @@ export function Editor({
 	onChange,
 	onScroll,
 	editorRef,
+	onCursorChange,
 }: EditorProps) {
 	const containerRef = useRef<HTMLDivElement>(null);
 	const viewRef = useRef<EditorView | null>(null);
@@ -49,6 +59,33 @@ export function Editor({
 					isScrollingFromOutside.current = false;
 				});
 			},
+			getCursorPosition(): CursorPosition {
+				const view = viewRef.current;
+				if (!view) return { line: 0, column: 0, offset: 0 };
+
+				const pos = view.state.selection.main.head;
+				const line = view.state.doc.lineAt(pos);
+				const lineNumber = view.state.doc.lineAt(pos).number - 1; // 0-indexed
+				const column = pos - line.from; // 0-indexed column within line
+
+				return { line: lineNumber, column, offset: pos };
+			},
+			setCursorPosition(position: CursorPosition) {
+				const view = viewRef.current;
+				if (!view) return;
+
+				// Find the position for the given line and column
+				const lineIndex = position.line + 1; // CodeMirror lines are 1-indexed
+				if (lineIndex < 1 || lineIndex > view.state.doc.lines) return;
+
+				const line = view.state.doc.line(lineIndex);
+				const targetPos = Math.min(line.from + position.column, line.to);
+
+				view.dispatch({
+					selection: { anchor: targetPos, head: targetPos },
+					scrollIntoView: true,
+				});
+			},
 		}),
 		[],
 	);
@@ -59,7 +96,29 @@ export function Editor({
 
 		const updateListener = EditorView.updateListener.of((update) => {
 			if (update.docChanged && !isExternalUpdate.current) {
-				onChange(update.state.doc.toString());
+				const pos = update.state.selection.main.head;
+				const line = update.state.doc.lineAt(pos);
+				const lineNumber = update.state.doc.lineAt(pos).number - 1;
+				const column = pos - line.from;
+
+				onChange(update.state.doc.toString(), {
+					line: lineNumber,
+					column,
+					offset: pos,
+				});
+			}
+			// Notify on cursor movement (even without doc change)
+			if (onCursorChange && (update.selectionSet || update.docChanged)) {
+				const pos = update.state.selection.main.head;
+				const line = update.state.doc.lineAt(pos);
+				const lineNumber = update.state.doc.lineAt(pos).number - 1;
+				const column = pos - line.from;
+
+				onCursorChange({
+					line: lineNumber,
+					column,
+					offset: pos,
+				});
 			}
 		});
 
