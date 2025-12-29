@@ -275,3 +275,18 @@ test "yaml_parse_on_keyword_as_key" {
   }
   inspect(key_str, content="on")
 }
+
+///|
+/// Test parsing a large mapping with many keys (> 50 to verify loop limit removal)
+test "yaml_parse_large_mapping" {
+  let mut yaml = ""
+  for i = 0; i < 100; i = i + 1 {
+    yaml = yaml + "key_" + i.to_string() + ": value_" + i.to_string() + "\n"
+  }
+  let result = @yaml.parse(yaml)
+  guard result is Ok(@yaml.YMapping(pairs, _, _)) else {
+    println("Parse failed or not a mapping")
+    return
+  }
+  inspect(pairs.length(), content="100")
+}

@@ -714,13 +714,8 @@ fn Parser::parse_indented_mapping(
   let mut key = ""
   let mut key_style : YamlScalarStyle = Plain
   let mut key_leading = self.flush_leading()
-  let mut loop_count = 0
 
   while true {
-    loop_count += 1
-    if loop_count > 50 {
-      break
-    }
 
     // Check for dedent at caller level before parsing next key
     // Exit if we've dedented past our level
